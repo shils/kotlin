@@ -372,7 +372,11 @@ public abstract class StackValue {
                 wrapJavaClassesIntoKClasses(v);
             }
             else {
-                v.checkcast(toType);
+                if (!(fromType.getSort() == Type.ARRAY &&
+                      OBJECT_TYPE.equals(toType.getElementType()) &&
+                      fromType.getElementType().getSort() == Type.OBJECT)) {
+                    v.checkcast(toType);
+                }
             }
         }
         else if (toType.getSort() == Type.OBJECT) {
