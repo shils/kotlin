@@ -688,11 +688,7 @@ public class BodyResolver {
             trace.report(ACCESSOR_FOR_DELEGATED_PROPERTY.on(setter));
         }
 
-        // todo: very strange scope!
-        LexicalScope delegateFunctionsScope = new LexicalScopeImpl(
-                propertyHeaderScope, propertyDescriptor, true, propertyDescriptor.getExtensionReceiverParameter(),
-                LexicalScopeKind.PROPERTY_DELEGATE_METHOD
-        );
+        LexicalScope delegateFunctionsScope = JetScopeUtils.makeScopeForDelegateConventionFunctions(propertyHeaderScope, propertyDescriptor);
 
         LexicalScope initializerScope = JetScopeUtils.makeScopeForPropertyInitializer(propertyHeaderScope, propertyDescriptor);
 

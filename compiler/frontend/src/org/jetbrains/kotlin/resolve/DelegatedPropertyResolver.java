@@ -32,7 +32,10 @@ import org.jetbrains.kotlin.resolve.calls.inference.ConstraintSystemCompleter;
 import org.jetbrains.kotlin.resolve.calls.model.ResolvedCall;
 import org.jetbrains.kotlin.resolve.calls.results.OverloadResolutionResults;
 import org.jetbrains.kotlin.resolve.calls.smartcasts.DataFlowInfo;
+import org.jetbrains.kotlin.resolve.scopes.JetScopeUtils;
 import org.jetbrains.kotlin.resolve.scopes.LexicalScope;
+import org.jetbrains.kotlin.resolve.scopes.LexicalScopeImpl;
+import org.jetbrains.kotlin.resolve.scopes.LexicalScopeKind;
 import org.jetbrains.kotlin.resolve.scopes.receivers.ExpressionReceiver;
 import org.jetbrains.kotlin.resolve.validation.OperatorValidator;
 import org.jetbrains.kotlin.resolve.validation.SymbolUsageValidator;
@@ -88,9 +91,9 @@ public class DelegatedPropertyResolver {
             @NotNull KtExpression delegateExpression,
             @NotNull KotlinType delegateType,
             @NotNull BindingTrace trace,
-            @NotNull LexicalScope scope
+            @NotNull LexicalScope delegateFunctionsScope
     ) {
-        resolveDelegatedPropertyConventionMethod(propertyDescriptor, delegateExpression, delegateType, trace, scope, true);
+        resolveDelegatedPropertyConventionMethod(propertyDescriptor, delegateExpression, delegateType, trace, delegateFunctionsScope, true);
         ResolvedCall<FunctionDescriptor> resolvedCall =
                 trace.getBindingContext().get(DELEGATED_PROPERTY_RESOLVED_CALL, propertyDescriptor.getGetter());
         return resolvedCall != null ? resolvedCall.getResultingDescriptor().getReturnType() : null;
@@ -344,9 +347,10 @@ public class DelegatedPropertyResolver {
             @NotNull KtProperty property,
             @NotNull final PropertyDescriptor propertyDescriptor,
             @NotNull final KtExpression delegateExpression,
-            @NotNull final LexicalScope accessorScope,
+            @NotNull LexicalScope scopeForDelegate,
             @NotNull final BindingTrace trace
     ) {
+        final LexicalScope delegateFunctionsScope = JetScopeUtils.makeScopeForDelegateConventionFunctions(scopeForDelegate, propertyDescriptor);
         final KotlinType expectedType = property.getTypeReference() != null ? propertyDescriptor.getType() : NO_EXPECTED_TYPE;
         return new ConstraintSystemCompleter() {
             @Override
@@ -360,7 +364,7 @@ public class DelegatedPropertyResolver {
                         TemporaryBindingTrace.create(trace, "Trace to resolve delegated property convention methods");
                 OverloadResolutionResults<FunctionDescriptor>
                         getMethodResults = getDelegatedPropertyConventionMethod(
-                                propertyDescriptor, delegateExpression, returnType, traceToResolveConventionMethods, accessorScope,
+                                propertyDescriptor, delegateExpression, returnType, traceToResolveConventionMethods, delegateFunctionsScope,
                                 true, false
                         );
 
@@ -381,7 +385,7 @@ public class DelegatedPropertyResolver {
 
                 OverloadResolutionResults<FunctionDescriptor>
                         setMethodResults = getDelegatedPropertyConventionMethod(
-                                propertyDescriptor, delegateExpression, returnType, traceToResolveConventionMethods, accessorScope,
+                                propertyDescriptor, delegateExpression, returnType, traceToResolveConventionMethods, delegateFunctionsScope,
                                 false, false
                         );
 

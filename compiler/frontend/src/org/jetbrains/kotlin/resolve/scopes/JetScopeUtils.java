@@ -64,6 +64,17 @@ public final class JetScopeUtils {
         return new LexicalScopeImpl(propertyHeader, propertyDescriptor, false, null, LexicalScopeKind.PROPERTY_INITIALIZER_OR_DELEGATE);
     }
 
+    @NotNull
+    public static LexicalScope makeScopeForDelegateConventionFunctions(
+            @NotNull LexicalScope parent,
+            @NotNull PropertyDescriptor propertyDescriptor
+    ) {
+        // todo: very strange scope!
+        return new LexicalScopeImpl(parent, propertyDescriptor, true, propertyDescriptor.getExtensionReceiverParameter(),
+                                    LexicalScopeKind.PROPERTY_DELEGATE_METHOD
+        );
+    }
+
     @TestOnly
     @NotNull
     public static String printStructure(@Nullable MemberScope scope) {

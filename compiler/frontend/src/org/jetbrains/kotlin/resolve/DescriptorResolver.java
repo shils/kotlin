@@ -46,10 +46,7 @@ import org.jetbrains.kotlin.resolve.constants.ConstantValue;
 import org.jetbrains.kotlin.resolve.constants.evaluate.ConstantExpressionEvaluator;
 import org.jetbrains.kotlin.resolve.dataClassUtils.DataClassUtilsKt;
 import org.jetbrains.kotlin.resolve.lazy.ForceResolveUtil;
-import org.jetbrains.kotlin.resolve.scopes.JetScopeUtils;
-import org.jetbrains.kotlin.resolve.scopes.LexicalScope;
-import org.jetbrains.kotlin.resolve.scopes.LexicalScopeKind;
-import org.jetbrains.kotlin.resolve.scopes.LexicalWritableScope;
+import org.jetbrains.kotlin.resolve.scopes.*;
 import org.jetbrains.kotlin.resolve.scopes.utils.ScopeUtilsKt;
 import org.jetbrains.kotlin.resolve.source.KotlinSourceElementKt;
 import org.jetbrains.kotlin.storage.StorageManager;
@@ -941,8 +938,9 @@ public class DescriptorResolver {
                 delegateExpression, property, propertyDescriptor, scopeForInitializer, trace, dataFlowInfo);
 
         if (type != null) {
+            LexicalScope delegateFunctionsScope = JetScopeUtils.makeScopeForDelegateConventionFunctions(scopeForInitializer, propertyDescriptor);
             KotlinType getterReturnType = delegatedPropertyResolver
-                    .getDelegatedPropertyGetMethodReturnType(propertyDescriptor, delegateExpression, type, trace, scopeForInitializer);
+                    .getDelegatedPropertyGetMethodReturnType(propertyDescriptor, delegateExpression, type, trace, delegateFunctionsScope);
             if (getterReturnType != null) {
                 return getterReturnType;
             }
@@ -1009,7 +1007,7 @@ public class DescriptorResolver {
                                                                         .toSourceElement(setter));
             KtTypeReference returnTypeReference = setter.getReturnTypeReference();
             if (returnTypeReference != null) {
-                KotlinType returnType = typeResolver.resolveType(scope, returnTypeReference, trace, true);
+                KotlinType returnType = typeResolver.resolveType(scopeWithTypeParameters, returnTypeReference, trace, true);
                 if (!KotlinBuiltIns.isUnit(returnType)) {
                     trace.report(WRONG_SETTER_RETURN_TYPE.on(returnTypeReference));
                 }
