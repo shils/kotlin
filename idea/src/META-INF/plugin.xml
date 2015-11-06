@@ -179,6 +179,13 @@
 
       <add-to-group group-id="GenerateGroup" anchor="first"/>
     </group>
+
+    <group id="Internal.Kotlin" text="Kotlin" popup="true" internal="true">
+      <action id="KotlinLogWrappedExceptions" class="org.jetbrains.kotlin.idea.actions.internal.ToggleLogStoredExceptionAction"
+              text="Toggle cached exceptions log">
+      </action>
+      <add-to-group group-id="Internal"/>
+    </group>
   </actions>
 
   <extensions defaultExtensionNs="com.intellij">
