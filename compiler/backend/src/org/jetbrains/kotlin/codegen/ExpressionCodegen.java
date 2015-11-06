@@ -2409,6 +2409,15 @@ public class ExpressionCodegen extends KtVisitor<StackValue, StackValue> impleme
             }
         }
 
+        Collection<ExpressionCodegenExtension> codegenExtensions = ExpressionCodegenExtension.Companion.getInstances(state.getProject());
+        if (!codegenExtensions.isEmpty()) {
+            ExpressionCodegenExtension.Context context = new ExpressionCodegenExtension.Context(typeMapper, v);
+            for (ExpressionCodegenExtension extension : codegenExtensions) {
+                StackValue stackValue = extension.applyFunction(receiver, resolvedCall, context);
+                if (stackValue != null) return stackValue;
+            }
+        }
+
         Callable callable = resolveToCallable(fd, superCall, resolvedCall);
 
         return callable.invokeMethodWithArguments(resolvedCall, receiver, this);
@@ -2470,15 +2479,6 @@ public class ExpressionCodegen extends KtVisitor<StackValue, StackValue> impleme
 
         if (!(resolvedCall.getResultingDescriptor() instanceof ConstructorDescriptor)) { // otherwise already
             receiver = StackValue.receiver(resolvedCall, receiver, this, callableMethod);
-
-            Collection<ExpressionCodegenExtension> codegenExtensions = ExpressionCodegenExtension.Companion.getInstances(state.getProject());
-            if (!codegenExtensions.isEmpty()) {
-                ExpressionCodegenExtension.Context context = new ExpressionCodegenExtension.Context(typeMapper, v);
-                for (ExpressionCodegenExtension extension : codegenExtensions) {
-                    if (extension.applyFunction(receiver, resolvedCall, context)) return;
-                }
-            }
-
             receiver.put(receiver.type, v);
         }
 
