@@ -3912,6 +3912,12 @@ public class BlackBoxWithStdlibCodegenTestGenerated extends AbstractBlackBoxCode
                 KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("compiler/testData/codegen/boxWithStdlib/reflection/methodsFromAny"), Pattern.compile("^(.+)\\.kt$"), true);
             }
 
+            @TestMetadata("callableReferencesEqualToCallablesFromAPI.kt")
+            public void testCallableReferencesEqualToCallablesFromAPI() throws Exception {
+                String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/codegen/boxWithStdlib/reflection/methodsFromAny/callableReferencesEqualToCallablesFromAPI.kt");
+                doTestWithStdlib(fileName);
+            }
+
             @TestMetadata("classToString.kt")
             public void testClassToString() throws Exception {
                 String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/codegen/boxWithStdlib/reflection/methodsFromAny/classToString.kt");
@@ -4021,6 +4027,27 @@ public class BlackBoxWithStdlibCodegenTestGenerated extends AbstractBlackBoxCode
             public void testSimpleClassLiterals() throws Exception {
                 String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/codegen/boxWithStdlib/reflection/noKotlinReflect/simpleClassLiterals.kt");
                 doTestWithStdlib(fileName);
+            }
+
+            @TestMetadata("compiler/testData/codegen/boxWithStdlib/reflection/noKotlinReflect/methodsFromAny")
+            @TestDataPath("$PROJECT_ROOT")
+            @RunWith(JUnit3RunnerWithInners.class)
+            public static class MethodsFromAny extends AbstractBlackBoxCodegenTest {
+                public void testAllFilesPresentInMethodsFromAny() throws Exception {
+                    KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("compiler/testData/codegen/boxWithStdlib/reflection/noKotlinReflect/methodsFromAny"), Pattern.compile("^(.+)\\.kt$"), true);
+                }
+
+                @TestMetadata("callableReferences.kt")
+                public void testCallableReferences() throws Exception {
+                    String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/codegen/boxWithStdlib/reflection/noKotlinReflect/methodsFromAny/callableReferences.kt");
+                    doTestWithStdlib(fileName);
+                }
+
+                @TestMetadata("classReference.kt")
+                public void testClassReference() throws Exception {
+                    String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/codegen/boxWithStdlib/reflection/noKotlinReflect/methodsFromAny/classReference.kt");
+                    doTestWithStdlib(fileName);
+                }
             }
         }
 
