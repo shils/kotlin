@@ -530,6 +530,39 @@ public class BasicCompletionHandlerTestGenerated extends AbstractBasicCompletion
         }
     }
 
+    @TestMetadata("idea/idea-completion/testData/handlers/basic/staticMembers")
+    @TestDataPath("$PROJECT_ROOT")
+    @RunWith(JUnit3RunnerWithInners.class)
+    public static class StaticMembers extends AbstractBasicCompletionHandlerTest {
+        public void testAllFilesPresentInStaticMembers() throws Exception {
+            KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("idea/idea-completion/testData/handlers/basic/staticMembers"), Pattern.compile("^(.+)\\.kt$"), true);
+        }
+
+        @TestMetadata("classObjectMethod.kt")
+        public void testClassObjectMethod() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/handlers/basic/staticMembers/classObjectMethod.kt");
+            doTest(fileName);
+        }
+
+        @TestMetadata("ImportFromCompanionObject.kt")
+        public void testImportFromCompanionObject() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/handlers/basic/staticMembers/ImportFromCompanionObject.kt");
+            doTest(fileName);
+        }
+
+        @TestMetadata("ImportJavaStaticMethod.kt")
+        public void testImportJavaStaticMethod() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/handlers/basic/staticMembers/ImportJavaStaticMethod.kt");
+            doTest(fileName);
+        }
+
+        @TestMetadata("JavaStaticMethod.kt")
+        public void testJavaStaticMethod() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/handlers/basic/staticMembers/JavaStaticMethod.kt");
+            doTest(fileName);
+        }
+    }
+
     @TestMetadata("idea/idea-completion/testData/handlers/basic/stringTemplate")
     @TestDataPath("$PROJECT_ROOT")
     @RunWith(JUnit3RunnerWithInners.class)

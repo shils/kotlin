@@ -27,7 +27,6 @@ import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.idea.completion.handlers.GenerateLambdaInfo
 import org.jetbrains.kotlin.idea.completion.handlers.KotlinFunctionInsertHandler
 import org.jetbrains.kotlin.idea.completion.handlers.lambdaPresentation
-import org.jetbrains.kotlin.idea.resolve.ResolutionFacade
 import org.jetbrains.kotlin.idea.util.CallType
 import org.jetbrains.kotlin.idea.util.FuzzyType
 import org.jetbrains.kotlin.renderer.DescriptorRenderer
@@ -43,15 +42,27 @@ import org.jetbrains.kotlin.types.TypeUtils
 import org.jetbrains.kotlin.types.typeUtil.isSubtypeOf
 import org.jetbrains.kotlin.utils.addIfNotNull
 
+interface AbstractLookupElementFactory {
+    fun createStandardLookupElementsForDescriptor(descriptor: DeclarationDescriptor, useReceiverTypes: Boolean): Collection<LookupElement>
+
+    fun createLookupElement(
+            descriptor: DeclarationDescriptor,
+            useReceiverTypes: Boolean,
+            qualifyNestedClasses: Boolean = false,
+            includeClassTypeArguments: Boolean = true,
+            parametersAndTypeGrayed: Boolean = false
+    ): LookupElement?
+}
+
 data /* we need copy() */
 class LookupElementFactory(
         val basicFactory: BasicLookupElementFactory,
-        private val resolutionFacade: ResolutionFacade,
         private val receiverTypes: Collection<KotlinType>?,
         private val callType: CallType<*>?,
         private val inDescriptor: DeclarationDescriptor,
-        private val contextVariablesProvider: ContextVariablesProvider
-) {
+        private val contextVariablesProvider: ContextVariablesProvider,
+        private val standardLookupElementsPostProcessor: (LookupElement) -> LookupElement = { it }
+) : AbstractLookupElementFactory {
     companion object {
         fun hasSingleFunctionTypeParameter(descriptor: FunctionDescriptor): Boolean {
             val parameter = descriptor.original.valueParameters.singleOrNull() ?: return false
@@ -70,13 +81,12 @@ class LookupElementFactory(
                 .toSet()
     }
 
-    public fun createStandardLookupElementsForDescriptor(descriptor: DeclarationDescriptor, useReceiverTypes: Boolean): Collection<LookupElement> {
+    override fun createStandardLookupElementsForDescriptor(descriptor: DeclarationDescriptor, useReceiverTypes: Boolean): Collection<LookupElement> {
         val result = SmartList<LookupElement>()
 
         val isNormalCall = callType == CallType.DEFAULT || callType == CallType.DOT || callType == CallType.SAFE || callType == CallType.SUPER_MEMBERS
 
-        var lookupElement = createLookupElement(descriptor, useReceiverTypes, parametersAndTypeGrayed = !isNormalCall && callType != CallType.INFIX)
-        result.add(lookupElement)
+        result.add(createLookupElement(descriptor, useReceiverTypes, parametersAndTypeGrayed = !isNormalCall && callType != CallType.INFIX))
 
         // add special item for function with one argument of function type with more than one parameter
         if (descriptor is FunctionDescriptor && isNormalCall) {
@@ -88,7 +98,7 @@ class LookupElementFactory(
             }
         }
 
-        return result
+        return result.map(standardLookupElementsPostProcessor)
     }
 
     private fun MutableCollection<LookupElement>.addSpecialFunctionCallElements(descriptor: FunctionDescriptor, useReceiverTypes: Boolean) {
@@ -199,12 +209,12 @@ class LookupElementFactory(
         }
     }
 
-    public fun createLookupElement(
+    override fun createLookupElement(
             descriptor: DeclarationDescriptor,
             useReceiverTypes: Boolean,
-            qualifyNestedClasses: Boolean = false,
-            includeClassTypeArguments: Boolean = true,
-            parametersAndTypeGrayed: Boolean = false
+            qualifyNestedClasses: Boolean,
+            includeClassTypeArguments: Boolean,
+            parametersAndTypeGrayed: Boolean
     ): LookupElement {
         var element = basicFactory.createLookupElement(descriptor, qualifyNestedClasses, includeClassTypeArguments, parametersAndTypeGrayed)
 

@@ -108,9 +108,11 @@ class BasicCompletionSession(
         return ALL
     }
 
-    public fun shouldDisableAutoPopup(): Boolean {
-        return completionKind.shouldDisableAutoPopup()
-    }
+    fun shouldDisableAutoPopup(): Boolean
+            = completionKind.shouldDisableAutoPopup()
+
+    override fun shouldCompleteTopLevelCallablesFromIndex()
+            = super.shouldCompleteTopLevelCallablesFromIndex() && prefix.isNotEmpty()
 
     override fun doComplete() {
         assert(parameters.completionType == CompletionType.BASIC)
@@ -196,7 +198,7 @@ class BasicCompletionSession(
 
                 packageNames.forEach { collector.addElement(basicLookupElementFactory.createLookupElementForPackage(it)) }
             }
-
+            
             flushToResultSet()
 
             NamedArgumentCompletion.complete(collector, expectedInfos)
@@ -214,6 +216,12 @@ class BasicCompletionSession(
                     collector.addDescriptorElements(notImported, lookupElementFactory, notImported = true)
                 }
 
+                val staticMembersCompletion = StaticMembersCompletion(
+                        prefixMatcher, resolutionFacade, lookupElementFactory, referenceVariants!!.imported, isJvmModule)
+                if (callTypeAndReceiver is CallTypeAndReceiver.DEFAULT) {
+                    staticMembersCompletion.completeFromImports(file, collector)
+                }
+
                 completeNonImported(lookupElementFactory)
                 flushToResultSet()
 
@@ -227,12 +235,19 @@ class BasicCompletionSession(
                         flushToResultSet()
                     }
                 }
+
+                if (configuration.completeStaticMembers && callTypeAndReceiver is CallTypeAndReceiver.DEFAULT && prefix.isNotEmpty()) {
+                    staticMembersCompletion.completeFromIndices(indicesHelper(false), collector)
+                }
             }
         }
 
         private fun completeNonImported(lookupElementFactory: LookupElementFactory) {
             if (shouldCompleteTopLevelCallablesFromIndex()) {
-                collector.addDescriptorElements(getTopLevelCallables(), lookupElementFactory, notImported = true)
+                processTopLevelCallables {
+                    collector.addDescriptorElements(it, lookupElementFactory, notImported = true)
+                    flushToResultSet()
+                }
             }
 
             val classKindFilter: ((ClassKind) -> Boolean)?
@@ -242,7 +257,7 @@ class BasicCompletionSession(
                 else -> classKindFilter = null
             }
             if (classKindFilter != null) {
-                if (configuration.completeNonImportedDeclarations) {
+                if (configuration.completeNonImportedClasses) {
                     addClassesFromIndex(classKindFilter)
                 }
                 else {
@@ -410,13 +425,13 @@ class BasicCompletionSession(
                     lookupElement
                 }
 
-                parameterNameAndTypeCompletion.addFromParametersInFile(position, resolutionFacade, isVisibleFilter)
+                parameterNameAndTypeCompletion.addFromParametersInFile(position, resolutionFacade, isVisibleFilterCheckAlways)
                 flushToResultSet()
 
-                parameterNameAndTypeCompletion.addFromImportedClasses(position, bindingContext, isVisibleFilter)
+                parameterNameAndTypeCompletion.addFromImportedClasses(position, bindingContext, isVisibleFilterCheckAlways)
                 flushToResultSet()
 
-                parameterNameAndTypeCompletion.addFromAllClasses(parameters, indicesHelper)
+                parameterNameAndTypeCompletion.addFromAllClasses(parameters, indicesHelper(false))
             }
         }
 

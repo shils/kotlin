@@ -16,10 +16,7 @@
 
 package org.jetbrains.kotlin.idea.completion
 
-import com.intellij.codeInsight.completion.CompletionProgressIndicator
-import com.intellij.codeInsight.completion.CompletionService
-import com.intellij.codeInsight.completion.InsertionContext
-import com.intellij.codeInsight.completion.PrefixMatcher
+import com.intellij.codeInsight.completion.*
 import com.intellij.codeInsight.lookup.*
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.util.Key
@@ -27,11 +24,11 @@ import com.intellij.patterns.ElementPattern
 import com.intellij.patterns.StandardPatterns
 import com.intellij.psi.PsiDocumentManager
 import org.jetbrains.kotlin.builtins.KotlinBuiltIns
-import org.jetbrains.kotlin.descriptors.CallableDescriptor
-import org.jetbrains.kotlin.descriptors.ReceiverParameterDescriptor
+import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.idea.KotlinIcons
 import org.jetbrains.kotlin.idea.completion.handlers.CastReceiverInsertHandler
 import org.jetbrains.kotlin.idea.completion.handlers.WithTailInsertHandler
+import org.jetbrains.kotlin.idea.imports.importableFqName
 import org.jetbrains.kotlin.idea.resolve.ResolutionFacade
 import org.jetbrains.kotlin.idea.util.*
 import org.jetbrains.kotlin.name.Name
@@ -40,6 +37,7 @@ import org.jetbrains.kotlin.psi.psiUtil.parentsWithSelf
 import org.jetbrains.kotlin.renderer.DescriptorRenderer
 import org.jetbrains.kotlin.renderer.render
 import org.jetbrains.kotlin.resolve.BindingContext
+import org.jetbrains.kotlin.resolve.DescriptorUtils
 import org.jetbrains.kotlin.resolve.inline.InlineUtil
 import org.jetbrains.kotlin.types.KotlinType
 import org.jetbrains.kotlin.types.typeUtil.TypeNullability
@@ -69,7 +67,9 @@ enum class ItemPriority {
     DEFAULT,
     IMPLEMENT,
     OVERRIDE,
-    NAMED_PARAMETER
+    NAMED_PARAMETER,
+    STATIC_MEMBER_FROM_IMPORTS,
+    STATIC_MEMBER
 }
 
 val ITEM_PRIORITY_KEY = Key<ItemPriority>("ITEM_PRIORITY_KEY")
@@ -152,7 +152,7 @@ fun InsertionContext.isAfterDot(): Boolean {
     val chars = getDocument().getCharsSequence()
     while (offset > 0) {
         offset--
-        val c = chars.charAt(offset)
+        val c = chars[offset]
         if (!Character.isWhitespace(c)) {
             return c == '.'
         }
@@ -335,7 +335,7 @@ private open class BaseTypeLookupElement(type: KotlinType, baseLookupElement: Lo
 
     override fun handleInsert(context: InsertionContext) {
         context.getDocument().replaceString(context.getStartOffset(), context.getTailOffset(), fullText)
-        context.setTailOffset(context.getStartOffset() + fullText.length())
+        context.setTailOffset(context.getStartOffset() + fullText.length)
         shortenReferences(context, context.getStartOffset(), context.getTailOffset())
     }
 }
@@ -350,3 +350,73 @@ fun <T> ElementPattern<T>.andNot(rhs: ElementPattern<T>) = StandardPatterns.and(
 fun <T> ElementPattern<T>.or(rhs: ElementPattern<T>) = StandardPatterns.or(this, rhs)
 
 fun singleCharPattern(char: Char) = StandardPatterns.character().equalTo(char)
+
+fun LookupElement.decorateAsStaticMember(
+        memberDescriptor: DeclarationDescriptor,
+        classNameAsLookupString: Boolean
+): LookupElement? {
+    var container = memberDescriptor.containingDeclaration as? ClassDescriptor ?: return null
+    var classDescriptor = if (container.isCompanionObject)
+        container.containingDeclaration as? ClassDescriptor ?: return null
+    else
+        container
+
+    val qualifierPresentation = classDescriptor.getName().asString()
+    val qualifierText = IdeDescriptorRenderers.SOURCE_CODE.renderClassifierName(classDescriptor)
+
+    return object: LookupElementDecorator<LookupElement>(this) {
+        override fun getAllLookupStrings(): Set<String> {
+            return if (classNameAsLookupString) setOf(delegate.lookupString, qualifierPresentation) else super.getAllLookupStrings()
+        }
+
+        override fun renderElement(presentation: LookupElementPresentation) {
+            delegate.renderElement(presentation)
+
+            presentation.itemText = qualifierPresentation + "." + presentation.itemText
+
+            val tailText = " (" + DescriptorUtils.getFqName(classDescriptor.containingDeclaration) + ")"
+            if (memberDescriptor is FunctionDescriptor) {
+                presentation.appendTailText(tailText, true)
+            }
+            else {
+                presentation.setTailText(tailText, true)
+            }
+
+            if (presentation.typeText.isNullOrEmpty()) {
+                presentation.typeText = DescriptorRenderer.SHORT_NAMES_IN_TYPES.renderType(classDescriptor.defaultType)
+            }
+        }
+
+        override fun handleInsert(context: InsertionContext) {
+            val psiDocumentManager = PsiDocumentManager.getInstance(context.project)
+            val file = context.file as KtFile
+
+            val classImportableFqName = container.importableFqName
+            val useImport = classImportableFqName != null && file.importDirectives.any {
+                !it.isAllUnder && it.importPath?.fqnPart()?.parent() == classImportableFqName
+            }
+
+            var insertQualifier = true
+            if (useImport) {
+                psiDocumentManager.commitAllDocuments()
+                if (ImportInsertHelper.getInstance(context.project).importDescriptor(file, memberDescriptor) != ImportInsertHelper.ImportDescriptorResult.FAIL) {
+                    insertQualifier = false
+                }
+            }
+
+            if (insertQualifier) {
+                val prefix = qualifierText + "."
+
+                val offset = context.startOffset
+                context.document.insertString(offset, prefix)
+                context.offsetMap.addOffset(CompletionInitializationContext.START_OFFSET, offset + prefix.length)
+
+                shortenReferences(context, offset, offset + prefix.length)
+
+            }
+
+            psiDocumentManager.doPostponedOperationsAndUnblockDocument(context.document)
+            super.handleInsert(context)
+        }
+    }
+}

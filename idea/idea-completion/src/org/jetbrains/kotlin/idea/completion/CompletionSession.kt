@@ -54,24 +54,28 @@ import org.jetbrains.kotlin.utils.addToStdlib.firstIsInstance
 import java.util.*
 
 class CompletionSessionConfiguration(
-        val completeNonImportedDeclarations: Boolean,
+        val completeNonImportedClasses: Boolean,
         val completeNonAccessibleDeclarations: Boolean,
         val filterOutJavaGettersAndSetters: Boolean,
-        val completeJavaClassesNotToBeUsed: Boolean
+        val completeJavaClassesNotToBeUsed: Boolean,
+        val completeStaticMembers: Boolean
 )
 
 fun CompletionSessionConfiguration(parameters: CompletionParameters) = CompletionSessionConfiguration(
-        completeNonImportedDeclarations = parameters.invocationCount >= 2,
+        completeNonImportedClasses = parameters.invocationCount >= 2,
         completeNonAccessibleDeclarations = parameters.invocationCount >= 2,
         filterOutJavaGettersAndSetters = parameters.invocationCount < 2,
-        completeJavaClassesNotToBeUsed = parameters.invocationCount >= 2
+        completeJavaClassesNotToBeUsed = parameters.invocationCount >= 2,
+        completeStaticMembers = parameters.invocationCount >= 2
 )
 
-abstract class CompletionSession(protected val configuration: CompletionSessionConfiguration,
-                                     protected val parameters: CompletionParameters,
-                                     resultSet: CompletionResultSet) {
+abstract class CompletionSession(
+        protected val configuration: CompletionSessionConfiguration,
+        protected val parameters: CompletionParameters,
+        resultSet: CompletionResultSet
+) {
     protected val position = parameters.getPosition()
-    private val file = position.getContainingFile() as KtFile
+    protected val file = position.getContainingFile() as KtFile
     protected val resolutionFacade = file.getResolutionFacade()
     protected val moduleDescriptor = resolutionFacade.moduleDescriptor
     protected val project = position.getProject()
@@ -124,7 +128,8 @@ abstract class CompletionSession(protected val configuration: CompletionSessionC
     private fun ((Name) -> Boolean).or(otherFilter: (Name) -> Boolean): (Name) -> Boolean
             = { this(it) || otherFilter(it) }
 
-    protected val isVisibleFilter: (DeclarationDescriptor) -> Boolean = { isVisibleDescriptor(it) }
+    protected val isVisibleFilter: (DeclarationDescriptor) -> Boolean = { isVisibleDescriptor(it, completeNonAccessible = configuration.completeNonAccessibleDeclarations) }
+    protected val isVisibleFilterCheckAlways: (DeclarationDescriptor) -> Boolean = { isVisibleDescriptor(it, completeNonAccessible = false) }
 
     protected val referenceVariantsHelper = ReferenceVariantsHelper(bindingContext, resolutionFacade, moduleDescriptor, isVisibleFilter)
 
@@ -151,8 +156,10 @@ abstract class CompletionSession(protected val configuration: CompletionSessionC
         override fun contains(file: VirtualFile) = super.contains(file) && file != parameters.getOriginalFile().getVirtualFile()
     }
 
-    protected val indicesHelper: KotlinIndicesHelper
-        get() = KotlinIndicesHelper(resolutionFacade, searchScope, isVisibleFilter, true)
+    protected fun indicesHelper(mayIncludeInaccessible: Boolean): KotlinIndicesHelper {
+        val filter = if (mayIncludeInaccessible) isVisibleFilter else isVisibleFilterCheckAlways
+        return KotlinIndicesHelper(resolutionFacade, searchScope, filter, filterOutPrivate = !mayIncludeInaccessible)
+    }
 
     protected val toFromOriginalFileMapper: ToFromOriginalFileMapper
             = ToFromOriginalFileMapper(parameters.originalFile as KtFile, position.containingFile as KtFile, parameters.offset)
@@ -178,7 +185,7 @@ abstract class CompletionSession(protected val configuration: CompletionSessionC
             get() = 0
     }
 
-    private fun isVisibleDescriptor(descriptor: DeclarationDescriptor): Boolean {
+    private fun isVisibleDescriptor(descriptor: DeclarationDescriptor, completeNonAccessible: Boolean): Boolean {
         if (!configuration.completeJavaClassesNotToBeUsed && descriptor is ClassDescriptor) {
             val classification = descriptor.importableFqName?.let { importableFqNameClassifier.classify(it, isPackage = false) }
             if (classification == ImportableFqNameClassifier.Classification.notToBeUsedInKotlin) return false
@@ -189,7 +196,7 @@ abstract class CompletionSession(protected val configuration: CompletionSessionC
         if (descriptor is DeclarationDescriptorWithVisibility) {
             val visible = descriptor.isVisible(inDescriptor, bindingContext, nameExpression)
             if (visible) return true
-            return configuration.completeNonAccessibleDeclarations && !descriptor.isFromLibrary()
+            return completeNonAccessible && !descriptor.isFromLibrary()
         }
 
         return true
@@ -246,7 +253,10 @@ abstract class CompletionSession(protected val configuration: CompletionSessionC
     protected open fun createSorter(): CompletionSorter {
         var sorter = CompletionSorter.defaultSorter(parameters, prefixMatcher)!!
 
-        sorter = sorter.weighBefore("stats", DeprecatedWeigher, PriorityWeigher, NotImportedWeigher(importableFqNameClassifier), KindWeigher, CallableWeigher)
+        sorter = sorter.weighBefore("stats", DeprecatedWeigher, PriorityWeigher,
+                                    NotImportedWeigher(importableFqNameClassifier),
+                                    NotImportedStaticMemberWeigher(importableFqNameClassifier),
+                                    KindWeigher, CallableWeigher)
 
         sorter = sorter.weighAfter("stats", VariableOrFunctionWeigher, ImportedWeigher(importableFqNameClassifier))
 
@@ -309,6 +319,7 @@ abstract class CompletionSession(protected val configuration: CompletionSessionC
         var notImportedExtensions: Collection<CallableDescriptor> = emptyList()
         if (callTypeAndReceiver.shouldCompleteCallableExtensions()) {
             val nameFilter: (String) -> Boolean = { prefixMatcher.prefixMatches(it) }
+            val indicesHelper = indicesHelper(true)
             val extensions = if (runtimeReceiver != null)
                 indicesHelper.getCallableTopLevelExtensions(callTypeAndReceiver, listOf(runtimeReceiver.type), nameFilter)
             else
@@ -326,7 +337,9 @@ abstract class CompletionSession(protected val configuration: CompletionSessionC
 
         if (shadowedDeclarationsFilter != null) {
             variants = shadowedDeclarationsFilter.filter(variants)
-            notImportedExtensions = shadowedDeclarationsFilter.filterNonImported(notImportedExtensions, variants)
+            notImportedExtensions = shadowedDeclarationsFilter
+                    .createNonImportedDeclarationsFilter<CallableDescriptor>(importedDeclarations = variants)
+                    .invoke(notImportedExtensions)
         }
 
         if (configuration.filterOutJavaGettersAndSetters) {
@@ -376,16 +389,24 @@ abstract class CompletionSession(protected val configuration: CompletionSessionC
         return result
     }
 
-    protected fun shouldCompleteTopLevelCallablesFromIndex(): Boolean {
-        if (!configuration.completeNonImportedDeclarations) return false
+    protected open fun shouldCompleteTopLevelCallablesFromIndex(): Boolean {
+        if (nameExpression == null) return false
         if ((descriptorKindFilter?.kindMask ?: 0).and(DescriptorKindFilter.CALLABLES_MASK) == 0) return false
         if (callTypeAndReceiver is CallTypeAndReceiver.IMPORT_DIRECTIVE) return false
         return callTypeAndReceiver.receiver == null
     }
 
-    protected fun getTopLevelCallables(): Collection<DeclarationDescriptor> {
-        return indicesHelper.getTopLevelCallables({ prefixMatcher.prefixMatches(it) })
-                .filterShadowedNonImported()
+    protected fun processTopLevelCallables(processor: (CallableDescriptor) -> Unit) {
+        val shadowedFilter = ShadowedDeclarationsFilter.create(bindingContext, resolutionFacade, nameExpression!!, callTypeAndReceiver)
+                ?.createNonImportedDeclarationsFilter<CallableDescriptor>(referenceVariants!!.imported)
+        indicesHelper(true).processTopLevelCallables({ prefixMatcher.prefixMatches(it) }) {
+            if (shadowedFilter != null) {
+                shadowedFilter(listOf(it)).singleOrNull()?.let(processor)
+            }
+            else {
+                processor(it)
+            }
+        }
     }
 
     protected fun CallTypeAndReceiver<*, *>.shouldCompleteCallableExtensions(): Boolean {
@@ -393,13 +414,8 @@ abstract class CompletionSession(protected val configuration: CompletionSessionC
                && this !is CallTypeAndReceiver.IMPORT_DIRECTIVE
     }
 
-    private fun Collection<CallableDescriptor>.filterShadowedNonImported(): Collection<CallableDescriptor> {
-        val filter = ShadowedDeclarationsFilter.create(bindingContext, resolutionFacade, nameExpression!!, callTypeAndReceiver)
-        return if (filter != null) filter.filterNonImported(this, referenceVariants!!.imported) else this
-    }
-
     protected fun addClassesFromIndex(kindFilter: (ClassKind) -> Boolean) {
-        AllClassesCompletion(parameters, indicesHelper, prefixMatcher, resolutionFacade, kindFilter)
+        AllClassesCompletion(parameters, indicesHelper(true), prefixMatcher, resolutionFacade, kindFilter)
                 .collect(
                         { descriptor -> collector.addElement(basicLookupElementFactory.createLookupElement(descriptor), notImported = true) },
                         { javaClass -> collector.addElement(basicLookupElementFactory.createLookupElementForJavaClass(javaClass), notImported = true) }
@@ -418,8 +434,8 @@ abstract class CompletionSession(protected val configuration: CompletionSessionC
         action(lookupElementFactory)
     }
 
-    protected fun createLookupElementFactory(contextVariablesProvider: ContextVariablesProvider): LookupElementFactory {
-        return LookupElementFactory(basicLookupElementFactory, resolutionFacade, receiverTypes,
+    protected open fun createLookupElementFactory(contextVariablesProvider: ContextVariablesProvider): LookupElementFactory {
+        return LookupElementFactory(basicLookupElementFactory, receiverTypes,
                                     callTypeAndReceiver.callType, inDescriptor, contextVariablesProvider)
     }
 
@@ -444,6 +460,6 @@ abstract class CompletionSession(protected val configuration: CompletionSessionC
     protected fun isImportableDescriptorImported(descriptor: DeclarationDescriptor): Boolean {
         val classification = importableFqNameClassifier.classify(descriptor.importableFqName!!, false)
         return classification != ImportableFqNameClassifier.Classification.notImported
-               && classification != ImportableFqNameClassifier.Classification.hasImportFromSamePackage
+               && classification != ImportableFqNameClassifier.Classification.siblingImported
     }
 }
