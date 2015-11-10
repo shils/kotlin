@@ -19,6 +19,7 @@ package org.jetbrains.kotlin.codegen.state;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiElement;
 import kotlin.CollectionsKt;
+import kotlin.Pair;
 import kotlin.jvm.functions.Function1;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -432,16 +433,16 @@ public class JetTypeMapper {
         boolean projectionsAllowed = kind != JetTypeMapperMode.SUPER_TYPE;
         if (known != null) {
             if (kind == JetTypeMapperMode.VALUE || kind == JetTypeMapperMode.VALUE_FOR_ANNOTATION) {
-                return mapKnownAsmType(jetType, known, signatureVisitor, howThisTypeIsUsed);
+                return mapKnownAsmType(jetType, known, signatureVisitor, howThisTypeIsUsed, kind);
             }
             else if (kind == JetTypeMapperMode.TYPE_PARAMETER || kind == JetTypeMapperMode.SUPER_TYPE ||
                      kind == JetTypeMapperMode.TYPE_PARAMETER_FOR_ANNOTATION) {
-                return mapKnownAsmType(jetType, boxType(known), signatureVisitor, howThisTypeIsUsed, projectionsAllowed);
+                return mapKnownAsmType(jetType, boxType(known), signatureVisitor, howThisTypeIsUsed, projectionsAllowed, kind);
             }
             else if (kind == JetTypeMapperMode.IMPL) {
                 // TODO: enable and fix tests
                 //throw new IllegalStateException("must not map known type to IMPL when not compiling builtins: " + jetType);
-                return mapKnownAsmType(jetType, known, signatureVisitor, howThisTypeIsUsed);
+                return mapKnownAsmType(jetType, known, signatureVisitor, howThisTypeIsUsed, kind);
             }
             else {
                 throw new IllegalStateException("unknown kind: " + kind);
@@ -504,7 +505,7 @@ public class JetTypeMapper {
             Type asmType = kind.isForAnnotation() && KotlinBuiltIns.isKClass((ClassDescriptor) descriptor) ?
                            AsmTypes.JAVA_CLASS_TYPE :
                            computeAsmType((ClassDescriptor) descriptor.getOriginal());
-            writeGenericType(signatureVisitor, asmType, jetType, howThisTypeIsUsed, projectionsAllowed);
+            writeGenericType(signatureVisitor, asmType, jetType, howThisTypeIsUsed, projectionsAllowed, kind);
             return asmType;
         }
 
@@ -628,42 +629,76 @@ public class JetTypeMapper {
     private void writeGenericType(
             BothSignatureWriter signatureVisitor,
             Type asmType,
-            KotlinType jetType,
+            KotlinType type,
             Variance howThisTypeIsUsed,
-            boolean projectionsAllowed
+            boolean projectionsAllowed,
+            JetTypeMapperMode kind
     ) {
         if (signatureVisitor != null) {
-            if (hasNothingInArguments(jetType)) {
+            if (hasNothingInArguments(type) || type.getArguments().isEmpty()) {
                 signatureVisitor.writeAsmType(asmType);
                 return;
             }
 
-            signatureVisitor.writeClassBegin(asmType);
+            PossiblyInnerType possiblyInnerType = TypeParameterUtilsKt.buildPossiblyInnerType(type);
+            assert possiblyInnerType != null : "possiblyInnerType with arguments should not be null";
 
-            List<TypeProjection> arguments = jetType.getArguments();
-            for (TypeParameterDescriptor parameter : jetType.getConstructor().getParameters()) {
-                if (parameter.isCopyFromOuterDeclaration()) continue;
+            List<PossiblyInnerType> innerTypesAsList = possiblyInnerType.segments();
 
-                TypeProjection argument = arguments.get(parameter.getIndex());
+            PossiblyInnerType outermostInnerType = innerTypesAsList.get(0);
+            ClassDescriptor outermostClass = outermostInnerType.getClassDescriptor();
 
-                if (projectionsAllowed && argument.isStarProjection()) {
-                    signatureVisitor.writeUnboundedWildcard();
-                }
-                else {
-                    Variance projectionKind = projectionsAllowed
-                                              ? getEffectiveVariance(
-                            parameter.getVariance(),
-                            argument.getProjectionKind(),
-                            howThisTypeIsUsed
-                    )
-                                              : Variance.INVARIANT;
-                    signatureVisitor.writeTypeArgument(projectionKind);
+            signatureVisitor.writeOuterClassBegin(
+                    asmType,
+                    mapType(outermostClass.getDefaultType(), null, kind, howThisTypeIsUsed).getInternalName());
 
-                    mapType(argument.getType(), signatureVisitor, JetTypeMapperMode.TYPE_PARAMETER);
-                    signatureVisitor.writeTypeArgumentEnd();
-                }
+            writeGenericArguments(
+                    signatureVisitor,
+                    outermostInnerType.getArguments(), outermostClass.getDeclaredTypeParameters(),
+                    howThisTypeIsUsed, projectionsAllowed);
+
+            for (PossiblyInnerType innerPart : innerTypesAsList.subList(1, innerTypesAsList.size())) {
+                ClassDescriptor classDescriptor = innerPart.getClassDescriptor();
+                Type innerType = mapType(classDescriptor.getDefaultType(), null, kind, howThisTypeIsUsed);
+                signatureVisitor.writeInnerClass(getSimpleInternalName(innerType.getInternalName()));
+                writeGenericArguments(
+                        signatureVisitor, innerPart.getArguments(),
+                        classDescriptor.getDeclaredTypeParameters(),
+                        howThisTypeIsUsed, projectionsAllowed
+                );
             }
+
             signatureVisitor.writeClassEnd();
+        }
+    }
+
+    private void writeGenericArguments(
+            BothSignatureWriter signatureVisitor,
+            List<? extends TypeProjection> arguments,
+            List<? extends TypeParameterDescriptor> parameters,
+            Variance howThisTypeIsUsed,
+            boolean projectionsAllowed
+    ) {
+        for (Pair<? extends TypeParameterDescriptor, ? extends TypeProjection> item : CollectionsKt.zip(parameters, arguments)) {
+            TypeParameterDescriptor parameter = item.getFirst();
+            TypeProjection argument = item.getSecond();
+
+            if (projectionsAllowed && argument.isStarProjection()) {
+                signatureVisitor.writeUnboundedWildcard();
+            }
+            else {
+                Variance projectionKind = projectionsAllowed
+                                          ? getEffectiveVariance(
+                        parameter.getVariance(),
+                        argument.getProjectionKind(),
+                        howThisTypeIsUsed
+                )
+                                          : Variance.INVARIANT;
+                signatureVisitor.writeTypeArgument(projectionKind);
+
+                mapType(argument.getType(), signatureVisitor, JetTypeMapperMode.TYPE_PARAMETER);
+                signatureVisitor.writeTypeArgumentEnd();
+            }
         }
     }
 
@@ -708,9 +743,10 @@ public class JetTypeMapper {
             KotlinType jetType,
             Type asmType,
             @Nullable BothSignatureWriter signatureVisitor,
-            @NotNull Variance howThisTypeIsUsed
+            @NotNull Variance howThisTypeIsUsed,
+            @NotNull JetTypeMapperMode kind
     ) {
-        return mapKnownAsmType(jetType, asmType, signatureVisitor, howThisTypeIsUsed, true);
+        return mapKnownAsmType(jetType, asmType, signatureVisitor, howThisTypeIsUsed, true, kind);
     }
 
     private Type mapKnownAsmType(
@@ -718,14 +754,15 @@ public class JetTypeMapper {
             Type asmType,
             @Nullable BothSignatureWriter signatureVisitor,
             @NotNull Variance howThisTypeIsUsed,
-            boolean allowProjections
+            boolean allowProjections,
+            @NotNull JetTypeMapperMode kind
     ) {
         if (signatureVisitor != null) {
             if (jetType.getArguments().isEmpty()) {
                 signatureVisitor.writeAsmType(asmType);
             }
             else {
-                writeGenericType(signatureVisitor, asmType, jetType, howThisTypeIsUsed, allowProjections);
+                writeGenericType(signatureVisitor, asmType, jetType, howThisTypeIsUsed, allowProjections, kind);
             }
         }
         return asmType;

@@ -933,11 +933,20 @@ public class AsmUtil {
     public static String getSimpleInternalName(@NotNull String internalName) {
         int lastSlash = internalName.lastIndexOf('/');
         if (lastSlash >= 0) {
-            return internalName.substring(lastSlash + 1);
+            return getInnerClassPart(internalName.substring(lastSlash + 1));
         }
         else {
-            return internalName;
+            return getInnerClassPart(internalName);
         }
+    }
+
+    @NotNull
+    private static String getInnerClassPart(@NotNull String name) {
+        int lastDollar = name.lastIndexOf('$');
+        if (lastDollar >= 0) {
+            return name.substring(lastDollar + 1);
+        }
+        return name;
     }
 
     public static void putJavaLangClassInstance(@NotNull InstructionAdapter v, @NotNull Type type) {
