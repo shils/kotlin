@@ -1,11 +1,12 @@
 package test;
 
+import mockLib.foo
+
 public class Testing {
     public static void test() {
-        Li<caret>
+        Nest<caret>
     }
 }
 
-// EXIST: LibClass
-// EXIST: LibTrait
-// EXIST: LibEnum
+// EXIST: Nested
+// EXIST: NestedObject
