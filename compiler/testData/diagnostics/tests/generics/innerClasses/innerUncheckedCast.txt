@@ -1,0 +1,25 @@
+package
+
+public final class Outer</*0*/ E> {
+    public constructor Outer</*0*/ E>()
+    public final fun bar(/*0*/ x: Outer<E>.InnerBase, /*1*/ y: kotlin.Any?, /*2*/ z: Outer<*>.InnerBase): kotlin.Unit
+    public open override /*1*/ /*fake_override*/ fun equals(/*0*/ other: kotlin.Any?): kotlin.Boolean
+    public final fun foo(/*0*/ x: Outer<E>.InnerBase, /*1*/ y: kotlin.Any?, /*2*/ z: Outer<*>.InnerBase): kotlin.Unit
+    public open override /*1*/ /*fake_override*/ fun hashCode(): kotlin.Int
+    public open override /*1*/ /*fake_override*/ fun toString(): kotlin.String
+
+    public final inner class Inner : Outer<E>.InnerBase {
+        public constructor Inner()
+        public final val prop: E
+        public open override /*1*/ /*fake_override*/ fun equals(/*0*/ other: kotlin.Any?): kotlin.Boolean
+        public open override /*1*/ /*fake_override*/ fun hashCode(): kotlin.Int
+        public open override /*1*/ /*fake_override*/ fun toString(): kotlin.String
+    }
+
+    public open inner class InnerBase {
+        public constructor InnerBase()
+        public open override /*1*/ /*fake_override*/ fun equals(/*0*/ other: kotlin.Any?): kotlin.Boolean
+        public open override /*1*/ /*fake_override*/ fun hashCode(): kotlin.Int
+        public open override /*1*/ /*fake_override*/ fun toString(): kotlin.String
+    }
+}

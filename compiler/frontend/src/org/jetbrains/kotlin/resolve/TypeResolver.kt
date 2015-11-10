@@ -22,6 +22,7 @@ import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.descriptors.annotations.Annotations
 import org.jetbrains.kotlin.diagnostics.Errors
 import org.jetbrains.kotlin.diagnostics.Errors.*
+import org.jetbrains.kotlin.incremental.components.NoLookupLocation
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.codeFragmentUtil.debugTypeInfo
@@ -35,6 +36,7 @@ import org.jetbrains.kotlin.resolve.lazy.LazyEntity
 import org.jetbrains.kotlin.resolve.scopes.MemberScope
 import org.jetbrains.kotlin.resolve.scopes.LazyScopeAdapter
 import org.jetbrains.kotlin.resolve.scopes.LexicalScope
+import org.jetbrains.kotlin.resolve.scopes.utils.findClassifier
 import org.jetbrains.kotlin.storage.LockBasedStorageManager
 import org.jetbrains.kotlin.storage.StorageManager
 import org.jetbrains.kotlin.types.*
@@ -398,11 +400,30 @@ public class TypeResolver(
             }
         }
 
+        val parameters = classDescriptor.typeConstructor.parameters
+        if (result.size < parameters.size) {
+            if (parameters.subList(result.size, parameters.size).any { parameter -> !parameter.isDeclaredInScope(c) }) {
+                c.trace.report(WRONG_NUMBER_OF_TYPE_ARGUMENTS.on(qualifierParts.last().expression, parameters.size))
+                return null
+            }
+        }
+
         return result
     }
 
     private fun ClassifierDescriptor?.classDescriptorChain(): List<ClassDescriptor>
-            = sequence({ this as? ClassDescriptor }, { it.containingDeclaration as? ClassDescriptor }).toArrayList()
+            = sequence({ this as? ClassDescriptor }, { it.containingDeclaration as? ClassDescriptor }).toList()
+
+    private fun TypeParameterDescriptor.isDeclaredInScope(c: TypeResolutionContext): Boolean {
+        val contributedClassifier = c.scope.findClassifier(name, NoLookupLocation.WHEN_RESOLVE_DECLARATION) ?: return false
+        if (contributedClassifier.typeConstructor == typeConstructor) return true
+
+        return c.scope.ownerDescriptor.isInsideOfClass((containingDeclaration as? ClassDescriptor) ?: return false)
+    }
+
+    private fun DeclarationDescriptor.isInsideOfClass(classDescriptor: ClassDescriptor)
+            = sequence(this, { it.containingDeclaration }).any { it == classDescriptor }
+
 
     private fun resolveTypeProjectionsWithErrorConstructor(
             c: TypeResolutionContext,
