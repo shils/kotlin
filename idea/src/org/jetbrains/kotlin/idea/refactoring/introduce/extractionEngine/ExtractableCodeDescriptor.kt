@@ -25,7 +25,7 @@ import org.jetbrains.kotlin.descriptors.DeclarationDescriptor
 import org.jetbrains.kotlin.descriptors.ModuleDescriptor
 import org.jetbrains.kotlin.idea.core.KotlinNameSuggester
 import org.jetbrains.kotlin.idea.core.replaced
-import org.jetbrains.kotlin.idea.refactoring.JetRefactoringBundle
+import org.jetbrains.kotlin.idea.refactoring.KotlinRefactoringBundle
 import org.jetbrains.kotlin.idea.refactoring.introduce.extractionEngine.AnalysisResult.ErrorMessage
 import org.jetbrains.kotlin.idea.refactoring.introduce.extractionEngine.AnalysisResult.Status
 import org.jetbrains.kotlin.idea.refactoring.introduce.extractionEngine.OutputValue.ExpressionValue
@@ -407,7 +407,8 @@ data class ExtractionGeneratorOptions(
         val target: ExtractionTarget = ExtractionTarget.FUNCTION,
         val flexibleTypesAllowed: Boolean = false,
         val allowDummyName: Boolean = false,
-        val allowExpressionBody: Boolean = true
+        val allowExpressionBody: Boolean = true,
+        val delayInitialOccurrenceReplacement: Boolean = false
 ) {
     companion object {
         val DEFAULT = ExtractionGeneratorOptions()
@@ -457,7 +458,7 @@ class AnalysisResult (
         }
 
         fun renderMessage(): String {
-            val message = JetRefactoringBundle.message(
+            val message = KotlinRefactoringBundle.message(
                     when (this) {
                         NO_EXPRESSION -> "cannot.refactor.no.expression"
                         NO_CONTAINER -> "cannot.refactor.no.container"
