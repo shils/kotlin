@@ -53,6 +53,8 @@ class ConstraintSystemBuilderImpl : ConstraintSystem.Builder {
     internal val initialConstraints = ArrayList<Constraint>()
     internal val descriptorToVariable = LinkedHashMap<TypeParameterDescriptor, TypeVariable>()
 
+    override val substitutors = LinkedHashMap<CallHandle, TypeSubstitutor>()
+
     private val descriptorToVariableSubstitutor: TypeSubstitutor by lazy {
         TypeSubstitutor.create(object : TypeConstructorSubstitution() {
             override fun get(key: TypeConstructor): TypeProjection? {
@@ -67,7 +69,9 @@ class ConstraintSystemBuilderImpl : ConstraintSystem.Builder {
     override fun registerTypeVariables(
             call: CallHandle, typeParameters: Collection<TypeParameterDescriptor>, external: Boolean
     ): TypeSubstitutor {
-        if (typeParameters.isEmpty()) return TypeSubstitutor.EMPTY
+        if (typeParameters.isEmpty()) return TypeSubstitutor.EMPTY.apply {
+            substitutors[call] = this
+        }
 
         val typeVariables = (if (external) {
             typeParameters.toList()
@@ -94,9 +98,13 @@ class ConstraintSystemBuilderImpl : ConstraintSystem.Builder {
             }
         }
 
-        return TypeSubstitutor.create(TypeConstructorSubstitution.createByParametersMap(
+        val substitutor = TypeSubstitutor.create(TypeConstructorSubstitution.createByParametersMap(
                 typeParameters.zip(typeVariables.map { it.type }.defaultProjections()).toMap()
         ))
+
+        return substitutor.apply {
+            substitutors[call] = this
+        }
     }
 
     private fun KotlinType.isProper() = !TypeUtils.containsSpecialType(this) {
@@ -106,9 +114,8 @@ class ConstraintSystemBuilderImpl : ConstraintSystem.Builder {
     internal fun getNestedTypeVariables(type: KotlinType): List<TypeVariable> =
             type.getNestedTypeParameters().map { getMyTypeVariable(it) }.filterNotNull()
 
-    override fun addSupertypeConstraint(constrainingType: KotlinType?, subjectType: KotlinType, constraintPosition: ConstraintPosition) {
-        val newSubjectType = descriptorToVariableSubstitutor.substitute(subjectType, Variance.INVARIANT)
-        addConstraint(SUB_TYPE, newSubjectType, constrainingType, ConstraintContext(constraintPosition, initial = true))
+    override fun addSupertypeConstraint(constrainingType: KotlinType, subjectType: KotlinType, constraintPosition: ConstraintPosition) {
+        addConstraint(SUB_TYPE, subjectType, constrainingType, ConstraintContext(constraintPosition, initial = true))
     }
 
     override fun addSubtypeConstraint(constrainingType: KotlinType?, subjectType: KotlinType, constraintPosition: ConstraintPosition) {
@@ -374,7 +381,7 @@ class ConstraintSystemBuilderImpl : ConstraintSystem.Builder {
     }
 
     override fun build(): ConstraintSystem {
-        return ConstraintSystemImpl(allTypeParameterBounds, usedInBounds, errors, initialConstraints, descriptorToVariable)
+        return ConstraintSystemImpl(allTypeParameterBounds, usedInBounds, errors, initialConstraints, descriptorToVariable, substitutors)
     }
 }
 
