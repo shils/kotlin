@@ -19,14 +19,14 @@ package org.jetbrains.kotlin.idea.stubindex
 import com.intellij.openapi.project.Project
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.stubs.StubIndex
-import org.jetbrains.kotlin.psi.KtFile
-import org.jetbrains.kotlin.name.FqName
+import com.intellij.psi.util.CachedValueProvider.Result
+import com.intellij.psi.util.CachedValuesManager
+import com.intellij.psi.util.PsiModificationTracker
 import com.intellij.util.containers.MultiMap
 import org.jetbrains.kotlin.load.kotlin.PackageClassUtils
-import com.intellij.psi.util.CachedValuesManager
-import com.intellij.psi.util.CachedValueProvider.Result
-import com.intellij.psi.util.PsiModificationTracker
+import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
+import org.jetbrains.kotlin.psi.KtFile
 
 public object PackageIndexUtil {
     @JvmStatic
@@ -54,8 +54,13 @@ public object PackageIndexUtil {
             searchScope: GlobalSearchScope,
             project: Project
     ): Boolean {
+        val subpackagesIndex = SubpackagesIndexService.getInstance(project)
+        if (!subpackagesIndex.packageExists(packageFqName)) {
+            return false
+        }
+
         return containsFilesWithExactPackage(packageFqName, searchScope, project) ||
-               SubpackagesIndexService.getInstance(project).hasSubpackages(packageFqName, searchScope)
+               subpackagesIndex.hasSubpackages(packageFqName, searchScope)
     }
 
     @JvmStatic
