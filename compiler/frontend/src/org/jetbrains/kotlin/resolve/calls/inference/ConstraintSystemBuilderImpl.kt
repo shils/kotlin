@@ -64,7 +64,9 @@ class ConstraintSystemBuilderImpl : ConstraintSystem.Builder {
         })
     }
 
-    override fun registerTypeVariables(typeParameters: Collection<TypeParameterDescriptor>, external: Boolean): TypeSubstitutor {
+    override fun registerTypeVariables(
+            call: CallHandle, typeParameters: Collection<TypeParameterDescriptor>, external: Boolean
+    ): TypeSubstitutor {
         if (typeParameters.isEmpty()) return TypeSubstitutor.EMPTY
 
         val typeVariables = (if (external) {
@@ -76,7 +78,7 @@ class ConstraintSystemBuilderImpl : ConstraintSystem.Builder {
             )
         }).zip(typeParameters).map {
             val (fresh, original) = it
-            TypeVariable(fresh, original, external)
+            TypeVariable(call, fresh, original, external)
         }
 
         for ((descriptor, typeVariable) in typeParameters.zip(typeVariables)) {
