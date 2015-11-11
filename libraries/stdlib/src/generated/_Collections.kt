@@ -848,6 +848,10 @@ public fun <T : Comparable<T>> MutableList<T>.sortDescending(): Unit {
  * Returns a list of all elements sorted according to their natural sort order.
  */
 public fun <T : Comparable<T>> Iterable<T>.sorted(): List<T> {
+    if (this is Collection) {
+        if (size <= 1) return this.toArrayList()
+        return (toTypedArray<Comparable<T>>() as Array<T>).apply { sort() }.asList()
+    }
     return toArrayList().apply { sort() }
 }
 
@@ -876,6 +880,10 @@ public fun <T : Comparable<T>> Iterable<T>.sortedDescending(): List<T> {
  * Returns a list of all elements sorted according to the specified [comparator].
  */
 public fun <T> Iterable<T>.sortedWith(comparator: Comparator<in T>): List<T> {
+    if (this is Collection) {
+       if (size <= 1) return this.toArrayList()
+       return (toTypedArray<Any?>() as Array<T>).apply { sortWith(comparator) }.asList()
+    }
     return toArrayList().apply { sortWith(comparator) }
 }
 
@@ -1099,22 +1107,41 @@ public inline fun <T, K> Iterable<T>.groupByTo(map: MutableMap<K, MutableList<T>
 }
 
 /**
- * Returns a list containing the results of applying the given [transform] function to each element of the original collection.
+ * Returns a list containing the results of applying the given [transform] function
+ * to each element in the original collection.
  */
 public inline fun <T, R> Iterable<T>.map(transform: (T) -> R): List<R> {
     return mapTo(ArrayList<R>(collectionSizeOrDefault(10)), transform)
 }
 
 /**
- * Returns a list containing the results of applying the given [transform] function to each element and its index in the original collection.
+ * Returns a list containing the results of applying the given [transform] function
+ * to each element and its index in the original collection.
  */
 public inline fun <T, R> Iterable<T>.mapIndexed(transform: (Int, T) -> R): List<R> {
     return mapIndexedTo(ArrayList<R>(collectionSizeOrDefault(10)), transform)
 }
 
 /**
- * Appends transformed elements and their indices in the original collection using the given [transform] function
- * to the given [destination].
+ * Returns a list containing only the non-null results of applying the given [transform] function
+ * to each element and its index in the original collection.
+ */
+public inline fun <T, R : Any> Iterable<T>.mapIndexedNotNull(transform: (Int, T) -> R?): List<R> {
+    return mapIndexedNotNullTo(ArrayList<R>(), transform)
+}
+
+/**
+ * Applies the given [transform] function to each element and its index in the original collection
+ * and appends only the non-null results to the given [destination].
+ */
+public inline fun <T, R : Any, C : MutableCollection<in R>> Iterable<T>.mapIndexedNotNullTo(destination: C, transform: (Int, T) -> R?): C {
+    forEachIndexed { index, element -> transform(index, element)?.let { destination.add(it) } }
+    return destination
+}
+
+/**
+ * Applies the given [transform] function to each element and its index in the original collection
+ * and appends the results to the given [destination].
  */
 public inline fun <T, R, C : MutableCollection<in R>> Iterable<T>.mapIndexedTo(destination: C, transform: (Int, T) -> R): C {
     var index = 0
@@ -1124,8 +1151,25 @@ public inline fun <T, R, C : MutableCollection<in R>> Iterable<T>.mapIndexedTo(d
 }
 
 /**
- * Appends transformed elements of the original collection using the given [transform] function
- * to the given [destination].
+ * Returns a list containing only the non-null results of applying the given [transform] function
+ * to each element in the original collection.
+ */
+public inline fun <T, R : Any> Iterable<T>.mapNotNull(transform: (T) -> R?): List<R> {
+    return mapNotNullTo(ArrayList<R>(), transform)
+}
+
+/**
+ * Applies the given [transform] function to each element in the original collection
+ * and appends only the non-null results to the given [destination].
+ */
+public inline fun <T, R : Any, C : MutableCollection<in R>> Iterable<T>.mapNotNullTo(destination: C, transform: (T) -> R?): C {
+    forEach { element -> transform(element)?.let { destination.add(it) } }
+    return destination
+}
+
+/**
+ * Applies the given [transform] function to each element of the original collection
+ * and appends the results to the given [destination].
  */
 public inline fun <T, R, C : MutableCollection<in R>> Iterable<T>.mapTo(destination: C, transform: (T) -> R): C {
     for (item in this)
