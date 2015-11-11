@@ -19,6 +19,7 @@ package org.jetbrains.kotlin.idea.decompiler.stubBuilder
 import com.google.protobuf.MessageLite
 import com.intellij.psi.PsiElement
 import com.intellij.psi.stubs.StubElement
+import com.intellij.util.SmartList
 import org.jetbrains.kotlin.builtins.KotlinBuiltIns
 import org.jetbrains.kotlin.lexer.KtModifierKeywordToken
 import org.jetbrains.kotlin.lexer.KtTokens
@@ -39,6 +40,7 @@ import org.jetbrains.kotlin.serialization.deserialization.ProtoContainer
 import org.jetbrains.kotlin.serialization.deserialization.type
 import org.jetbrains.kotlin.serialization.deserialization.upperBounds
 import org.jetbrains.kotlin.serialization.deserialization.varargElementType
+import org.jetbrains.kotlin.serialization.outerTypeOrNull
 import org.jetbrains.kotlin.types.DynamicTypeCapabilities
 import org.jetbrains.kotlin.utils.addToStdlib.singletonOrEmptyList
 import java.util.*
@@ -88,9 +90,12 @@ class TypeClsStubBuilder(private val c: ClsStubBuilderContext) {
             return
         }
         createTypeAnnotationStubs(parent, annotations)
-        val typeStub = createStubForTypeName(classId, parent)
-        val typeArgumentProtoList = type.getArgumentList()
-        createTypeArgumentListStub(typeStub, typeArgumentProtoList)
+        val outerTypeChain = sequence(type) { it.outerTypeOrNull }.toList()
+
+        createStubForTypeName(classId, parent) {
+            userTypeStub, index ->
+            outerTypeChain.getOrNull(index)?.let { createTypeArgumentListStub(userTypeStub, it.argumentList) }
+        }
     }
 
     private fun createTypeAnnotationStubs(parent: KotlinStubBaseImpl<*>, annotations: List<ClassId>) {
