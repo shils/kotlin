@@ -129,6 +129,8 @@ message Type {
   // Name of the type parameter in the immediate owner
   optional int32 type_parameter_name = 9 [(name_id_in_table) = true];
 
+  optional Type outer_type = 10;
+
   extensions 100 to 199;
 }
 
