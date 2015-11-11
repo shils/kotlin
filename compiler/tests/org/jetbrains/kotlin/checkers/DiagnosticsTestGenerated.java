@@ -2985,6 +2985,12 @@ public class DiagnosticsTestGenerated extends AbstractDiagnosticsTest {
                 doTest(fileName);
             }
 
+            @TestMetadata("useUninitializedInLambda.kt")
+            public void testUseUninitializedInLambda() throws Exception {
+                String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/diagnostics/tests/controlFlowAnalysis/useUninitializedInLambda.kt");
+                doTest(fileName);
+            }
+
             @TestMetadata("varInitializationInIfInCycle.kt")
             public void testVarInitializationInIfInCycle() throws Exception {
                 String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/diagnostics/tests/controlFlowAnalysis/varInitializationInIfInCycle.kt");
