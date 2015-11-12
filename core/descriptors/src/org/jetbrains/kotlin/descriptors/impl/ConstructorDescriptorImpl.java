@@ -91,6 +91,12 @@ public class ConstructorDescriptorImpl extends FunctionDescriptorImpl implements
         return (ConstructorDescriptor) super.getOriginal();
     }
 
+    @NotNull
+    @Override
+    public ConstructorDescriptor substitute(@NotNull TypeSubstitutor originalSubstitutor) {
+        return (ConstructorDescriptor) super.substitute(originalSubstitutor);
+    }
+
     @Override
     public <R, D> R accept(DeclarationDescriptorVisitor<R, D> visitor, D data) {
         return visitor.visitConstructorDescriptor(this, data);
