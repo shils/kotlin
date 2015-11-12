@@ -734,7 +734,7 @@ public class JetTypeMapper {
         if (descriptor instanceof ConstructorDescriptor) {
             JvmMethodSignature method = mapSignature(descriptor);
             Type owner = mapClass(((ConstructorDescriptor) descriptor).getContainingDeclaration());
-            String defaultImplDesc = getDefaultDescriptor(method.getAsmMethod(), owner.getDescriptor(), false);
+            String defaultImplDesc = mapDefaultMethod(descriptor, OwnerKind.IMPLEMENTATION).getDescriptor();
             return new CallableMethod(owner, owner, defaultImplDesc, method, INVOKESPECIAL, null, null, null);
         }
 
@@ -745,8 +745,7 @@ public class JetTypeMapper {
         JvmMethodSignature signature;
         Type owner;
         Type ownerForDefaultImpl;
-        Type ownerForDefaultParam;
-        Method defaultMethod;
+        FunctionDescriptor baseMethodDescriptor;
         int invokeOpcode;
         Type thisClass;
 
@@ -761,11 +760,9 @@ public class JetTypeMapper {
 
             boolean isInterface = currentIsInterface && originalIsInterface;
 
-            FunctionDescriptor baseDeclaration = findBaseDeclaration(functionDescriptor);
-            defaultMethod = mapSignature(baseDeclaration.getOriginal()).getAsmMethod();
-            ClassDescriptor ownerForDefault = (ClassDescriptor) baseDeclaration.getContainingDeclaration();
-            ownerForDefaultParam = mapClass(ownerForDefault);
-            ownerForDefaultImpl = isJvmInterface(ownerForDefault) ? mapDefaultImpls(ownerForDefault) : ownerForDefaultParam;
+            baseMethodDescriptor = findBaseDeclaration(functionDescriptor).getOriginal();
+            ClassDescriptor ownerForDefault = (ClassDescriptor) baseMethodDescriptor.getContainingDeclaration();
+            ownerForDefaultImpl = isJvmInterface(ownerForDefault) ? mapDefaultImpls(ownerForDefault) : mapClass(ownerForDefault);
 
             if (isInterface && (superCall || descriptor.getVisibility() == Visibilities.PRIVATE)) {
                 thisClass = mapClass(currentOwner);
@@ -814,9 +811,8 @@ public class JetTypeMapper {
         else {
             signature = mapSignature(functionDescriptor.getOriginal());
             owner = mapOwner(functionDescriptor);
-            ownerForDefaultParam = owner;
             ownerForDefaultImpl = owner;
-            defaultMethod = signature.getAsmMethod();
+            baseMethodDescriptor = functionDescriptor;
             if (functionParent instanceof PackageFragmentDescriptor) {
                 invokeOpcode = INVOKESTATIC;
                 thisClass = null;
@@ -842,9 +838,7 @@ public class JetTypeMapper {
             receiverParameterType = null;
         }
 
-        String defaultImplDesc = getDefaultDescriptor(defaultMethod,
-                                     invokeOpcode == INVOKESTATIC ? null : ownerForDefaultParam.getDescriptor(),
-                                     receiverParameterType != null);
+        String defaultImplDesc = mapDefaultMethod(baseMethodDescriptor, getKindForDefaultImplCall(baseMethodDescriptor)).getDescriptor();
 
         return new CallableMethod(
                 owner, ownerForDefaultImpl, defaultImplDesc, signature, invokeOpcode,
@@ -926,6 +920,17 @@ public class JetTypeMapper {
         else {
             return updateMemberNameIfInternal(descriptor.getName().asString(), descriptor);
         }
+    }
+
+    @NotNull
+    private static OwnerKind getKindForDefaultImplCall(@NotNull FunctionDescriptor baseMethodDescriptor) {
+        DeclarationDescriptor containingDeclaration = baseMethodDescriptor.getContainingDeclaration();
+        if (containingDeclaration instanceof PackageFragmentDescriptor) {
+            return OwnerKind.PACKAGE;
+        } else if (isInterface(containingDeclaration)) {
+            return OwnerKind.DEFAULT_IMPLS;
+        }
+        return OwnerKind.IMPLEMENTATION;
     }
 
     @NotNull
