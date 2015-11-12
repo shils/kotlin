@@ -24,7 +24,7 @@ import org.jetbrains.kotlin.resolve.scopes.MemberScope
 import org.jetbrains.kotlin.types.KotlinType
 import org.jetbrains.kotlin.types.KotlinTypeImpl
 
-class TypeVariable(val freshTypeParameter: TypeParameterDescriptor) {
+class TypeVariable(val freshTypeParameter: TypeParameterDescriptor, val isExternal: Boolean) {
     val name: Name get() = freshTypeParameter.name
 
     val type: KotlinType = KotlinTypeImpl.create(Annotations.EMPTY, freshTypeParameter.typeConstructor, false, listOf(), MemberScope.Empty)

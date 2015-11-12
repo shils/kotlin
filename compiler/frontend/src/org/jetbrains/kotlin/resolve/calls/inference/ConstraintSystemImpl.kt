@@ -26,7 +26,6 @@ import org.jetbrains.kotlin.resolve.calls.inference.constraintPosition.Constrain
 import org.jetbrains.kotlin.resolve.calls.inference.constraintPosition.ConstraintPositionKind.TYPE_BOUND_POSITION
 import org.jetbrains.kotlin.resolve.calls.inference.constraintPosition.derivedFrom
 import org.jetbrains.kotlin.resolve.descriptorUtil.hasInternalAnnotationForResolve
-import org.jetbrains.kotlin.resolve.descriptorUtil.hasOnlyInputTypesAnnotation
 import org.jetbrains.kotlin.resolve.descriptorUtil.isInternalAnnotationForResolve
 import org.jetbrains.kotlin.types.*
 import org.jetbrains.kotlin.types.TypeUtils.DONT_CARE
@@ -36,7 +35,6 @@ import java.util.*
 
 internal class ConstraintSystemImpl(
         private val allTypeParameterBounds: Map<TypeVariable, TypeBoundsImpl>,
-        private val externalTypeParameters: Set<TypeParameterDescriptor>,
         private val usedInBounds: Map<TypeVariable, MutableList<TypeBounds.Bound>>,
         private val errors: List<ConstraintError>,
         private val initialConstraints: List<ConstraintSystemBuilderImpl.Constraint>,
@@ -44,8 +42,7 @@ internal class ConstraintSystemImpl(
         private val variableToDescriptor: Map<TypeVariable, TypeParameterDescriptor>
 ) : ConstraintSystem {
     private val localTypeParameterBounds: Map<TypeVariable, TypeBoundsImpl>
-        get() = if (externalTypeParameters.isEmpty()) allTypeParameterBounds
-        else allTypeParameterBounds.filter { it.key.freshTypeParameter !in externalTypeParameters }
+        get() = allTypeParameterBounds.filter { !it.key.isExternal }
 
     override val status = object : ConstraintSystemStatus {
         // for debug ConstraintsUtil.getDebugMessageForStatus might be used
@@ -170,7 +167,6 @@ internal class ConstraintSystemImpl(
             val (variable, bounds) = it
             variable to bounds.filterTo(arrayListOf<TypeBounds.Bound>()) { filterConstraintPosition(it.position )}
         }.toMap())
-        result.externalTypeParameters.addAll(externalTypeParameters )
         result.errors.addAll(errors.filter { filterConstraintPosition(it.constraintPosition) })
 
         result.initialConstraints.addAll(initialConstraints.filter { filterConstraintPosition(it.position) })
