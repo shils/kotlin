@@ -734,7 +734,8 @@ public class JetTypeMapper {
         if (descriptor instanceof ConstructorDescriptor) {
             JvmMethodSignature method = mapSignature(descriptor);
             Type owner = mapClass(((ConstructorDescriptor) descriptor).getContainingDeclaration());
-            return new CallableMethod(owner, owner, owner, method, INVOKESPECIAL, null, null, null);
+            String defaultImplDesc = getDefaultDescriptor(method.getAsmMethod(), owner.getDescriptor(), false);
+            return new CallableMethod(owner, owner, defaultImplDesc, method, INVOKESPECIAL, null, null, null);
         }
 
         DeclarationDescriptor functionParent = descriptor.getOriginal().getContainingDeclaration();
@@ -745,6 +746,7 @@ public class JetTypeMapper {
         Type owner;
         Type ownerForDefaultImpl;
         Type ownerForDefaultParam;
+        Method defaultMethod;
         int invokeOpcode;
         Type thisClass;
 
@@ -759,7 +761,9 @@ public class JetTypeMapper {
 
             boolean isInterface = currentIsInterface && originalIsInterface;
 
-            ClassDescriptor ownerForDefault = (ClassDescriptor) findBaseDeclaration(functionDescriptor).getContainingDeclaration();
+            FunctionDescriptor baseDeclaration = findBaseDeclaration(functionDescriptor);
+            defaultMethod = mapSignature(baseDeclaration.getOriginal()).getAsmMethod();
+            ClassDescriptor ownerForDefault = (ClassDescriptor) baseDeclaration.getContainingDeclaration();
             ownerForDefaultParam = mapClass(ownerForDefault);
             ownerForDefaultImpl = isJvmInterface(ownerForDefault) ? mapDefaultImpls(ownerForDefault) : ownerForDefaultParam;
 
@@ -812,6 +816,7 @@ public class JetTypeMapper {
             owner = mapOwner(functionDescriptor);
             ownerForDefaultParam = owner;
             ownerForDefaultImpl = owner;
+            defaultMethod = signature.getAsmMethod();
             if (functionParent instanceof PackageFragmentDescriptor) {
                 invokeOpcode = INVOKESTATIC;
                 thisClass = null;
@@ -836,8 +841,13 @@ public class JetTypeMapper {
         else {
             receiverParameterType = null;
         }
+
+        String defaultImplDesc = getDefaultDescriptor(defaultMethod,
+                                     invokeOpcode == INVOKESTATIC ? null : ownerForDefaultParam.getDescriptor(),
+                                     receiverParameterType != null);
+
         return new CallableMethod(
-                owner, ownerForDefaultImpl, ownerForDefaultParam, signature, invokeOpcode,
+                owner, ownerForDefaultImpl, defaultImplDesc, signature, invokeOpcode,
                 thisClass, receiverParameterType, calleeType);
     }
 
