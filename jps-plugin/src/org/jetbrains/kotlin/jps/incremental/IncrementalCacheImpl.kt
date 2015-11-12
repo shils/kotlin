@@ -16,6 +16,7 @@
 
 package org.jetbrains.kotlin.jps.incremental
 
+import com.google.protobuf.MessageLite
 import com.intellij.openapi.util.io.FileUtil
 import com.intellij.util.io.BooleanDataDescriptor
 import com.intellij.util.io.EnumeratorStringDescriptor
@@ -28,6 +29,7 @@ import org.jetbrains.jps.builders.storage.StorageProvider
 import org.jetbrains.jps.incremental.ModuleBuildTarget
 import org.jetbrains.jps.incremental.storage.BuildDataManager
 import org.jetbrains.jps.incremental.storage.PathStringDescriptor
+import org.jetbrains.kotlin.config.IncrementalCompilation
 import org.jetbrains.kotlin.inline.inlineFunctionsJvmNames
 import org.jetbrains.kotlin.jps.build.GeneratedJvmClass
 import org.jetbrains.kotlin.jps.build.KotlinBuilder
@@ -36,8 +38,12 @@ import org.jetbrains.kotlin.load.kotlin.ModuleMapping
 import org.jetbrains.kotlin.load.kotlin.header.*
 import org.jetbrains.kotlin.load.kotlin.incremental.components.IncrementalCache
 import org.jetbrains.kotlin.load.kotlin.incremental.components.JvmPackagePartProto
+import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.resolve.jvm.JvmClassName
+import org.jetbrains.kotlin.serialization.ProtoBuf
+import org.jetbrains.kotlin.serialization.deserialization.NameResolver
 import org.jetbrains.kotlin.serialization.jvm.BitEncoding
+import org.jetbrains.kotlin.serialization.jvm.JvmProtoBufUtil
 import org.jetbrains.org.objectweb.asm.*
 import java.io.File
 import java.security.MessageDigest
@@ -122,8 +128,12 @@ public class IncrementalCacheImpl(
             dependents.forEach(::addFilesAffectedByChangedInlineFuns)
         }
 
-        dirtyInlineFunctionsMap.clean()
+        cleanDirtyInlineFunctions()
         return result.map { File(it) }
+    }
+
+    public fun cleanDirtyInlineFunctions() {
+        dirtyInlineFunctionsMap.clean()
     }
 
     override fun getClassFilePath(internalClassName: String): String {
@@ -134,15 +144,15 @@ public class IncrementalCacheImpl(
         cacheFormatVersion.saveIfNeeded()
     }
 
-    public fun saveModuleMappingToCache(sourceFiles: Collection<File>, file: File): ChangesInfo {
+    public fun saveModuleMappingToCache(sourceFiles: Collection<File>, file: File): CompilationResult {
         val jvmClassName = JvmClassName.byInternalName(MODULE_MAPPING_FILE_NAME)
         protoMap.process(jvmClassName, file.readBytes(), emptyArray<String>(), isPackage = false, checkChangesIsOpenPart = false)
         dirtyOutputClassesMap.notDirty(MODULE_MAPPING_FILE_NAME)
         sourceFiles.forEach { sourceToClassesMap.add(it, jvmClassName) }
-        return ChangesInfo.NO_CHANGES
+        return CompilationResult.NO_CHANGES
     }
 
-    public fun saveFileToCache(generatedClass: GeneratedJvmClass): ChangesInfo {
+    public fun saveFileToCache(generatedClass: GeneratedJvmClass): CompilationResult {
         val sourceFiles: Collection<File> = generatedClass.sourceFiles
         val kotlinClass: LocalFileKotlinClass = generatedClass.outputClass
         val className = JvmClassName.byClassId(kotlinClass.classId)
@@ -160,9 +170,11 @@ public class IncrementalCacheImpl(
                 assert(sourceFiles.size() == 1) { "Package part from several source files: $sourceFiles" }
                 packagePartMap.addPackagePart(className)
 
-                protoMap.process(kotlinClass, isPackage = true) +
+                val isPackage = true
+
+                protoMap.process(kotlinClass, isPackage) +
                 constantsMap.process(kotlinClass) +
-                inlineFunctionsMap.process(kotlinClass)
+                inlineFunctionsMap.process(kotlinClass, isPackage)
             }
             header.isCompatibleMultifileClassKind() -> {
                 val partNames = kotlinClass.classHeader.filePartClassNames?.toList()
@@ -171,44 +183,93 @@ public class IncrementalCacheImpl(
 
                 // TODO NO_CHANGES? (delegates only, see package facade)
                 constantsMap.process(kotlinClass) +
-                inlineFunctionsMap.process(kotlinClass)
+                inlineFunctionsMap.process(kotlinClass, isPackage = true)
             }
             header.isCompatibleMultifileClassPartKind() -> {
                 assert(sourceFiles.size() == 1) { "Multifile class part from several source files: $sourceFiles" }
                 packagePartMap.addPackagePart(className)
                 multifileClassPartMap.add(className.internalName, header.multifileClassName!!)
 
-                protoMap.process(kotlinClass, isPackage = true) +
+                val isPackage = true
+
+                protoMap.process(kotlinClass, isPackage) +
                 constantsMap.process(kotlinClass) +
-                inlineFunctionsMap.process(kotlinClass)
+                inlineFunctionsMap.process(kotlinClass, isPackage)
             }
             header.isCompatibleClassKind() && !header.isLocalClass -> {
-                protoMap.process(kotlinClass, isPackage = false) +
+                val isPackage = false
+
+                protoMap.process(kotlinClass, isPackage) +
                 constantsMap.process(kotlinClass) +
-                inlineFunctionsMap.process(kotlinClass)
+                inlineFunctionsMap.process(kotlinClass, isPackage)
             }
-            else -> ChangesInfo.NO_CHANGES
+            else -> CompilationResult.NO_CHANGES
         }
 
         changesInfo.logIfSomethingChanged(className)
         return changesInfo
     }
 
-    private fun ChangesInfo.logIfSomethingChanged(className: JvmClassName) {
-        if (this == ChangesInfo.NO_CHANGES) return
+    private fun CompilationResult.logIfSomethingChanged(className: JvmClassName) {
+        if (this == CompilationResult.NO_CHANGES) return
 
         KotlinBuilder.LOG.debug("$className is changed: $this")
     }
 
-    public fun clearCacheForRemovedClasses(): ChangesInfo {
+    public fun clearCacheForRemovedClasses(): CompilationResult {
+
+        fun <T> T.getNonPrivateNames(nameResolver: NameResolver, vararg members: T.() -> List<MessageLite>) =
+                members.flatMap { this.it().filterNot { it.isPrivate }.names(nameResolver) }.toSet()
+
+        fun createChangeInfo(className: JvmClassName): ChangeInfo? {
+            if (className.internalName == MODULE_MAPPING_FILE_NAME) return null
+
+            val mapValue = protoMap.get(className) ?: return null
+
+            return when {
+                mapValue.isPackageFacade -> {
+                    val packageData = JvmProtoBufUtil.readPackageDataFrom(mapValue.bytes, mapValue.strings)
+
+                    val memberNames =
+                            packageData.packageProto.getNonPrivateNames(
+                                    packageData.nameResolver,
+                                    ProtoBuf.Package::getFunctionList,
+                                    ProtoBuf.Package::getPropertyList
+                            )
+
+                    ChangeInfo.Removed(className.packageFqName, memberNames)
+                }
+                else -> {
+                    val classData = JvmProtoBufUtil.readClassDataFrom(mapValue.bytes, mapValue.strings)
+
+                    val memberNames =
+                            classData.classProto.getNonPrivateNames(
+                                    classData.nameResolver,
+                                    ProtoBuf.Class::getConstructorList,
+                                    ProtoBuf.Class::getFunctionList,
+                                    ProtoBuf.Class::getPropertyList
+                            ) +
+                            classData.classProto.enumEntryList.map { classData.nameResolver.getString(it) }.toSet()
+
+                    ChangeInfo.Removed(className.fqNameForClassNameWithoutDollars, memberNames)
+                }
+            }
+        }
+
         val dirtyClasses = dirtyOutputClassesMap
                                 .getDirtyOutputClasses()
                                 .map(JvmClassName::byInternalName)
                                 .toList()
 
-        val changesInfo = dirtyClasses.fold(ChangesInfo.NO_CHANGES) { info, className ->
-            val newInfo = ChangesInfo(protoChanged = className in protoMap,
-                                      constantsChanged = className in constantsMap)
+        val changes =
+                if (IncrementalCompilation.isExperimental())
+                    dirtyClasses.map { createChangeInfo(it) }.asSequence().filterNotNull()
+                else
+                    emptySequence<ChangeInfo>()
+
+        val changesInfo = dirtyClasses.fold(CompilationResult(changes = changes)) { info, className ->
+            val newInfo = CompilationResult(protoChanged = className in protoMap,
+                                            constantsChanged = className in constantsMap)
             newInfo.logIfSomethingChanged(className)
             info + newInfo
         }
@@ -268,19 +329,19 @@ public class IncrementalCacheImpl(
 
     private inner class ProtoMap(storageFile: File) : BasicStringMap<ProtoMapValue>(storageFile, ProtoMapValueExternalizer) {
 
-        public fun process(kotlinClass: LocalFileKotlinClass, isPackage: Boolean, checkChangesIsOpenPart: Boolean = true): ChangesInfo {
+        public fun process(kotlinClass: LocalFileKotlinClass, isPackage: Boolean): CompilationResult {
             val header = kotlinClass.classHeader
             val bytes = BitEncoding.decodeBytes(header.annotationData!!)
-            return put(kotlinClass.className, bytes, header.strings!!, isPackage, checkChangesIsOpenPart)
+            return put(kotlinClass.className, bytes, header.strings!!, isPackage, checkChangesIsOpenPart = true)
         }
 
-        public fun process(className: JvmClassName, data: ByteArray, strings: Array<String>, isPackage: Boolean, checkChangesIsOpenPart: Boolean): ChangesInfo {
+        public fun process(className: JvmClassName, data: ByteArray, strings: Array<String>, isPackage: Boolean, checkChangesIsOpenPart: Boolean): CompilationResult {
             return put(className, data, strings, isPackage, checkChangesIsOpenPart)
         }
 
         private fun put(
                 className: JvmClassName, bytes: ByteArray, strings: Array<String>, isPackage: Boolean, checkChangesIsOpenPart: Boolean
-        ): ChangesInfo {
+        ): CompilationResult {
             val key = className.internalName
             val oldData = storage[key]
             val data = ProtoMapValue(isPackage, bytes, strings)
@@ -288,13 +349,27 @@ public class IncrementalCacheImpl(
             if (oldData == null ||
                 !Arrays.equals(bytes, oldData.bytes) ||
                 !Arrays.equals(strings, oldData.strings) ||
-                isPackage != oldData.isPackageFacade) {
+                isPackage != oldData.isPackageFacade
+            ) {
                 storage[key] = data
             }
 
-            return ChangesInfo(protoChanged = oldData == null ||
-                                              !checkChangesIsOpenPart ||
-                                              difference(oldData, data) != DifferenceKind.NONE)
+            if (oldData == null || !checkChangesIsOpenPart) return CompilationResult(protoChanged = true)
+
+            val diff = difference(oldData, data)
+
+            if (!IncrementalCompilation.isExperimental()) return CompilationResult(protoChanged = diff != DifferenceKind.NONE)
+
+            val fqName = if (isPackage) className.packageFqName else className.fqNameForClassNameWithoutDollars
+
+            val changes =
+                    when (diff) {
+                        is DifferenceKind.NONE -> emptySequence<ChangeInfo>()
+                        is DifferenceKind.CLASS_SIGNATURE -> sequenceOf(ChangeInfo.SignatureChanged(fqName))
+                        is DifferenceKind.MEMBERS -> sequenceOf(ChangeInfo.MembersChanged(fqName, diff.names))
+                    }
+
+            return CompilationResult(protoChanged = diff != DifferenceKind.NONE, changes = changes)
         }
 
         public fun contains(className: JvmClassName): Boolean =
@@ -332,15 +407,15 @@ public class IncrementalCacheImpl(
         fun contains(className: JvmClassName): Boolean =
                 className.internalName in storage
 
-        public fun process(kotlinClass: LocalFileKotlinClass): ChangesInfo {
+        public fun process(kotlinClass: LocalFileKotlinClass): CompilationResult {
             return put(kotlinClass.className, getConstantsMap(kotlinClass.fileContents))
         }
 
-        private fun put(className: JvmClassName, constantsMap: Map<String, Any>?): ChangesInfo {
+        private fun put(className: JvmClassName, constantsMap: Map<String, Any>?): CompilationResult {
             val key = className.getInternalName()
 
             val oldMap = storage[key]
-            if (oldMap == constantsMap) return ChangesInfo.NO_CHANGES
+            if (oldMap == constantsMap) return CompilationResult.NO_CHANGES
 
             if (constantsMap != null) {
                 storage[key] = constantsMap
@@ -349,7 +424,7 @@ public class IncrementalCacheImpl(
                 storage.remove(key)
             }
 
-            return ChangesInfo(constantsChanged = true)
+            return CompilationResult(constantsChanged = true)
         }
 
         public fun remove(className: JvmClassName) {
@@ -388,11 +463,11 @@ public class IncrementalCacheImpl(
             return result
         }
 
-        public fun process(kotlinClass: LocalFileKotlinClass): ChangesInfo {
-            return put(kotlinClass.className, getInlineFunctionsMap(kotlinClass.fileContents))
+        public fun process(kotlinClass: LocalFileKotlinClass, isPackage: Boolean): CompilationResult {
+            return put(kotlinClass.className, getInlineFunctionsMap(kotlinClass.fileContents), isPackage)
         }
 
-        private fun put(className: JvmClassName, newMap: Map<String, Long>): ChangesInfo {
+        private fun put(className: JvmClassName, newMap: Map<String, Long>, isPackage: Boolean): CompilationResult {
             val internalName = className.internalName
             val oldMap = storage[internalName] ?: emptyMap()
 
@@ -419,8 +494,19 @@ public class IncrementalCacheImpl(
                 dirtyInlineFunctionsMap.put(className, changed.toList())
             }
 
-            return ChangesInfo(inlineChanged = changed.isNotEmpty(),
-                               inlineAdded = added.isNotEmpty())
+            val changes =
+                    if (IncrementalCompilation.isExperimental()) {
+                        val fqName = if (isPackage) className.packageFqName else className.fqNameForClassNameWithoutDollars
+                        // TODO get name in better way instead of using substringBefore
+                        (added.asSequence() + changed.asSequence()).map { ChangeInfo.MembersChanged(fqName, listOf(it.substringBefore("("))) }
+                    }
+                    else {
+                        emptySequence<ChangeInfo>()
+                    }
+
+            return CompilationResult(inlineChanged = changed.isNotEmpty(),
+                                     inlineAdded = added.isNotEmpty(),
+                                     changes = changes)
         }
 
         public fun remove(className: JvmClassName) {
@@ -559,21 +645,29 @@ public class IncrementalCacheImpl(
     }
 }
 
-data class ChangesInfo(
-        public val protoChanged: Boolean = false,
-        public val constantsChanged: Boolean = false,
-        public val inlineChanged: Boolean = false,
-        public val inlineAdded: Boolean = false
+sealed class ChangeInfo(val fqName: FqName) {
+    open class MembersChanged(fqName: FqName, val names: Collection<String>) : ChangeInfo(fqName)
+    class Removed(fqName: FqName, names: Collection<String>) : MembersChanged(fqName, names)
+    class SignatureChanged(fqName: FqName) : ChangeInfo(fqName)
+}
+
+data class CompilationResult(
+        val protoChanged: Boolean = false,
+        val constantsChanged: Boolean = false,
+        val inlineChanged: Boolean = false,
+        val inlineAdded: Boolean = false,
+        val changes: Sequence<ChangeInfo> = emptySequence()
 ) {
     companion object {
-        public val NO_CHANGES: ChangesInfo = ChangesInfo()
+        public val NO_CHANGES: CompilationResult = CompilationResult()
     }
 
-    public fun plus(other: ChangesInfo): ChangesInfo =
-            ChangesInfo(protoChanged || other.protoChanged,
+    public fun plus(other: CompilationResult): CompilationResult =
+            CompilationResult(protoChanged || other.protoChanged,
                         constantsChanged || other.constantsChanged,
                         inlineChanged || other.inlineChanged,
-                        inlineAdded || other.inlineAdded)
+                        inlineAdded || other.inlineAdded,
+                        changes + other.changes)
 }
 
 
@@ -606,9 +700,6 @@ private fun ByteArray.md5(): Long {
             or ((d[7].toLong() and 0xFFL) shl 56)
            )
 }
-
-private val File.normalizedPath: String
-    get() = FileUtil.toSystemIndependentName(canonicalPath)
 
 @TestOnly
 private fun <K : Comparable<K>, V> Map<K, V>.dumpMap(dumpValue: (V)->String): String =

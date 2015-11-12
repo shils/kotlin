@@ -178,6 +178,7 @@ public class KotlinBuilder : ModuleLevelBuilder(BuilderCategory.SOURCE_PROCESSOR
         val compilationErrors = Utils.ERRORS_DETECTED_KEY[context, false]
         if (compilationErrors) {
             LOG.info("Compiled with errors")
+            return ABORT
         }
         else {
             LOG.info("Compiled successfully")
@@ -187,49 +188,48 @@ public class KotlinBuilder : ModuleLevelBuilder(BuilderCategory.SOURCE_PROCESSOR
 
         registerOutputItems(outputConsumer, generatedFiles)
 
-        context.checkCanceled()
-
-        val isJsModule = JpsUtils.isJsKotlinModule(chunk.representativeTarget())
-        val changesInfo: ChangesInfo = when {
-            isJsModule -> ChangesInfo.NO_CHANGES
-            else -> {
-                val generatedClasses = generatedFiles.filterIsInstance<GeneratedJvmClass>()
-                val info = updateKotlinIncrementalCache(compilationErrors, incrementalCaches, generatedFiles, chunk)
-                updateJavaMappings(chunk, compilationErrors, context, dirtyFilesHolder, filesToCompile, generatedClasses)
-                updateLookupStorage(chunk, lookupTracker, dataManager, dirtyFilesHolder, filesToCompile)
-                info
-            }
-        }
-
-        if (compilationErrors) {
-            return ABORT
-        }
-
-        if (isJsModule) {
+        if (JpsUtils.isJsKotlinModule(chunk.representativeTarget())) {
             copyJsLibraryFilesIfNeeded(chunk, project)
+            return OK
         }
 
         if (!IncrementalCompilation.isEnabled()) {
             return OK
         }
 
+        context.checkCanceled()
+
+        val generatedClasses = generatedFiles.filterIsInstance<GeneratedJvmClass>()
+        val changesInfo = updateKotlinIncrementalCache(compilationErrors, incrementalCaches, generatedFiles, chunk)
+        updateJavaMappings(chunk, compilationErrors, context, dirtyFilesHolder, filesToCompile, generatedClasses)
+        updateLookupStorage(chunk, lookupTracker, dataManager, dirtyFilesHolder, filesToCompile)
+
         val caches = filesToCompile.keySet().map { incrementalCaches[it]!! }
-        val marker = ChangesProcessor(context, chunk, allCompiledFiles, caches)
-        marker.processChanges(changesInfo)
+        processChanges(context, chunk, filesToCompile.values(), allCompiledFiles, dataManager, caches, changesInfo)
+
         return ADDITIONAL_PASS_REQUIRED
     }
 
-    class ChangesProcessor(
-            val context: CompileContext,
-            val chunk: ModuleChunk,
-            val allCompiledFiles: MutableSet<File>,
-            val caches: List<IncrementalCacheImpl>
+    private fun processChanges(
+            context: CompileContext,
+            chunk: ModuleChunk,
+            compiledFiles: Collection<File>,
+            allCompiledFiles: MutableSet<File>,
+            dataManager: BuildDataManager,
+            caches: List<IncrementalCacheImpl>,
+            compilationResult: CompilationResult
     ) {
-        fun processChanges(changesInfo: ChangesInfo) {
-            changesInfo.doProcessChanges()
+        fun recompileInlined() {
+            for (cache in caches) {
+                val filesToReinline = cache.getFilesToReinline()
+
+                filesToReinline.forEach {
+                    FSOperations.markDirty(context, CompilationRound.NEXT, it)
+                }
+            }
         }
 
-        private fun ChangesInfo.doProcessChanges() {
+        fun CompilationResult.doProcessChanges() {
             fun isKotlin(file: File) = KotlinSourceFileCollector.isKotlinSourceFile(file)
             fun isNotCompiled(file: File) = file !in allCompiledFiles
 
@@ -253,14 +253,33 @@ public class KotlinBuilder : ModuleLevelBuilder(BuilderCategory.SOURCE_PROCESSOR
             }
         }
 
-        private fun recompileInlined() {
-            for (cache in caches) {
-                val filesToReinline = cache.getFilesToReinline()
+        fun CompilationResult.doProcessChangesUsingLookups() {
+            val lookupStorage = dataManager.getStorage(KotlinDataContainerTarget, LookupStorageProvider)
 
-                filesToReinline.forEach {
+            // TODO group by fqName?
+            for (change in changes) {
+
+                if (change !is ChangeInfo.MembersChanged) continue
+
+                val files = change.names
+                        .flatMap { lookupStorage.get(LookupSymbol(it, change.fqName.asString())) }
+                        .asSequence()
+                        .map { File(it) }
+                        .filter { it !in compiledFiles && it.exists() }
+
+                files.forEach {
                     FSOperations.markDirty(context, CompilationRound.NEXT, it)
                 }
             }
+
+            caches.forEach { it.cleanDirtyInlineFunctions() }
+        }
+
+        if (IncrementalCompilation.isExperimental()) {
+            compilationResult.doProcessChangesUsingLookups()
+        }
+        else {
+            compilationResult.doProcessChanges()
         }
     }
 
@@ -395,9 +414,7 @@ public class KotlinBuilder : ModuleLevelBuilder(BuilderCategory.SOURCE_PROCESSOR
             return sources
         }
 
-        if (!IncrementalCompilation.isEnabled()) {
-            return
-        }
+        assert(IncrementalCompilation.isEnabled()) { "updateJavaMappings should not be called when incremental compilation disabled" }
 
         val previousMappings = context.getProjectDescriptor().dataManager.getMappings()
         val delta = previousMappings.createDelta()
@@ -432,14 +449,13 @@ public class KotlinBuilder : ModuleLevelBuilder(BuilderCategory.SOURCE_PROCESSOR
             incrementalCaches: Map<ModuleBuildTarget, IncrementalCacheImpl>,
             generatedFiles: List<GeneratedFile>,
             chunk: ModuleChunk
-    ): ChangesInfo {
-        if (!IncrementalCompilation.isEnabled()) {
-            return ChangesInfo.NO_CHANGES
-        }
+    ): CompilationResult {
+
+        assert(IncrementalCompilation.isEnabled()) { "updateKotlinIncrementalCache should not be called when incremental compilation disabled" }
 
         chunk.targets.forEach { incrementalCaches[it]!!.saveCacheFormatVersion() }
 
-        var changesInfo = ChangesInfo.NO_CHANGES
+        var changesInfo = CompilationResult.NO_CHANGES
         for (generatedFile in generatedFiles) {
             val ic = incrementalCaches[generatedFile.target]!!
             val newChangesInfo =
