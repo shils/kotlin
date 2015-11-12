@@ -471,6 +471,9 @@ class CollectionTest {
         assertTrue(listOf(15, 19, 20).contains(15))
 
         assertTrue(IterableWrapper(hashSetOf(45, 14, 13)).contains(14))
+
+        assertTrue(null !in listOf(1))
+        assertTrue((1 as Number) in listOf(1))  // deprecated, delegates to containsRaw
     }
 
     @test fun min() {

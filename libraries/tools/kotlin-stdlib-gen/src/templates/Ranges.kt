@@ -6,8 +6,8 @@ import templates.PrimitiveType.Companion.maxByCapacity
 fun ranges(): List<GenericFunction> {
     val templates = arrayListOf<GenericFunction>()
 
-    val rangePrimitives = listOf(PrimitiveType.Int, PrimitiveType.Long, PrimitiveType.Char)
-    val floatingPointPrimitives = listOf(PrimitiveType.Double, PrimitiveType.Float)
+    val rangePrimitives = setOf(PrimitiveType.Int, PrimitiveType.Long, PrimitiveType.Char)
+    val floatingPointPrimitives = setOf(PrimitiveType.Double, PrimitiveType.Float)
     fun rangeElementType(fromType: PrimitiveType, toType: PrimitiveType)
             = maxByCapacity(fromType, toType).let { if (it == PrimitiveType.Char) it else maxByCapacity(it, PrimitiveType.Int) }
 
@@ -269,6 +269,25 @@ fun ranges(): List<GenericFunction> {
     templates addAll numericPermutations.filter { it.first != it.second }
             .flatMap { listOf(containsDeprecated(it.first, it.second), contains(it.first, it.second)) }
 
+
+    templates add f("contains(item: E)") {
+        operator(true)
+
+        only(RangesOfPrimitives)
+        only(rangePrimitives + PrimitiveType.Byte + PrimitiveType.Short)
+        typeParam("E")
+        returns("Boolean")
+        deprecate { Deprecation("This call to contains() would require all range values to be materialized. Use containsRaw instead if you ultimately want to do so, or check the type of item to be compatible with type of range.", level = DeprecationLevel.ERROR)}
+        doc {
+            """
+            This overload of contains() gets resolved when the type of element isn't compatible with the type of range,
+            and there is no effective way to check whether the [item] belongs to this range other then materializing all
+            values of the range and comparing them with the specified [item] one by one.
+            Thus, using this overload is strongly deprecated and will result in error on the call site.
+            """
+        }
+        body { "return containsRaw(item)" }
+    }
 
     return templates
 }

@@ -1,4 +1,3 @@
-@file: Suppress("DEPRECATION_ERROR")
 package language
 
 import kotlin.test.*
@@ -36,6 +35,11 @@ public class RangeTest {
         val openRange = 1 until 10
         assertTrue(9 in openRange)
         assertFalse(10 in openRange)
+
+        // errors
+//        null !in openRange
+//        openRange.contains(null)
+//        (1 as Number) in openRange
 
         assertTrue(assertFails { 1 until Int.MIN_VALUE } is IllegalArgumentException)
     }

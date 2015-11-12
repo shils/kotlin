@@ -15,12 +15,12 @@ fun elements(): List<GenericFunction> {
 
         only(Iterables, Sequences, ArraysOfObjects, ArraysOfPrimitives)
         doc { f -> "Returns `true` if [element] is found in the ${f.collection}." }
-        customSignature(Iterables, ArraysOfObjects, Sequences) { "contains(element: @kotlin.internal.NoInfer T)" }
+        customSignature(Iterables, ArraysOfObjects, Sequences) { "contains(element: @kotlin.internal.NoInfer T?)" }
         returns("Boolean")
         body(Iterables) {
             """
                 if (this is Collection)
-                    return contains(element)
+                    return (this as Collection<T?>).contains(element)
                 return indexOf(element) >= 0
             """
         }
@@ -62,11 +62,11 @@ fun elements(): List<GenericFunction> {
     templates add f("indexOf(element: T)") {
         only(Iterables, Sequences, ArraysOfObjects, ArraysOfPrimitives)
         doc { f -> "Returns first index of [element], or -1 if the ${f.collection} does not contain element." }
-        customSignature(Iterables, ArraysOfObjects, Sequences) { "indexOf(element: @kotlin.internal.NoInfer T)" }
+        customSignature(Iterables, ArraysOfObjects, Sequences) { "indexOf(element: @kotlin.internal.NoInfer T?)" }
         returns("Int")
         body { f ->
             """
-            ${if (f == Iterables) "if (this is List) return this.indexOf(element)" else ""}
+            ${if (f == Iterables) "if (this is List) return (this as List<T?>).indexOf(element)" else ""}
             var index = 0
             for (item in this) {
                 if (element == item)
@@ -138,11 +138,11 @@ fun elements(): List<GenericFunction> {
     templates add f("lastIndexOf(element: T)") {
         only(Iterables, Sequences, ArraysOfObjects, ArraysOfPrimitives)
         doc { f -> "Returns last index of [element], or -1 if the ${f.collection} does not contain element." }
-        customSignature(Iterables, ArraysOfObjects, Sequences) { "lastIndexOf(element: @kotlin.internal.NoInfer T)" }
+        customSignature(Iterables, ArraysOfObjects, Sequences) { "lastIndexOf(element: @kotlin.internal.NoInfer T?)" }
         returns("Int")
         body { f ->
             """
-            ${if (f == Iterables) "if (this is List) return this.lastIndexOf(element)" else ""}
+            ${if (f == Iterables) "if (this is List) return (this as List<T?>).lastIndexOf(element)" else ""}
             var lastIndex = -1
             var index = 0
             for (item in this) {

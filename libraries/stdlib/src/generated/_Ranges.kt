@@ -237,6 +237,61 @@ public operator fun ClosedRange<Float>.contains(item: Double): Boolean {
 }
 
 /**
+ * This overload of contains() gets resolved when the type of element isn't compatible with the type of range,
+ * and there is no effective way to check whether the [item] belongs to this range other then materializing all
+ * values of the range and comparing them with the specified [item] one by one.
+ * Thus, using this overload is strongly deprecated and will result in error on the call site.
+ */
+@Deprecated("This call to contains() would require all range values to be materialized. Use containsRaw instead if you ultimately want to do so, or check the type of item to be compatible with type of range.", level = DeprecationLevel.ERROR)
+public operator fun <E> ByteRange.contains(item: E): Boolean {
+    return containsRaw(item)
+}
+
+/**
+ * This overload of contains() gets resolved when the type of element isn't compatible with the type of range,
+ * and there is no effective way to check whether the [item] belongs to this range other then materializing all
+ * values of the range and comparing them with the specified [item] one by one.
+ * Thus, using this overload is strongly deprecated and will result in error on the call site.
+ */
+@Deprecated("This call to contains() would require all range values to be materialized. Use containsRaw instead if you ultimately want to do so, or check the type of item to be compatible with type of range.", level = DeprecationLevel.ERROR)
+public operator fun <E> CharRange.contains(item: E): Boolean {
+    return containsRaw(item)
+}
+
+/**
+ * This overload of contains() gets resolved when the type of element isn't compatible with the type of range,
+ * and there is no effective way to check whether the [item] belongs to this range other then materializing all
+ * values of the range and comparing them with the specified [item] one by one.
+ * Thus, using this overload is strongly deprecated and will result in error on the call site.
+ */
+@Deprecated("This call to contains() would require all range values to be materialized. Use containsRaw instead if you ultimately want to do so, or check the type of item to be compatible with type of range.", level = DeprecationLevel.ERROR)
+public operator fun <E> IntRange.contains(item: E): Boolean {
+    return containsRaw(item)
+}
+
+/**
+ * This overload of contains() gets resolved when the type of element isn't compatible with the type of range,
+ * and there is no effective way to check whether the [item] belongs to this range other then materializing all
+ * values of the range and comparing them with the specified [item] one by one.
+ * Thus, using this overload is strongly deprecated and will result in error on the call site.
+ */
+@Deprecated("This call to contains() would require all range values to be materialized. Use containsRaw instead if you ultimately want to do so, or check the type of item to be compatible with type of range.", level = DeprecationLevel.ERROR)
+public operator fun <E> LongRange.contains(item: E): Boolean {
+    return containsRaw(item)
+}
+
+/**
+ * This overload of contains() gets resolved when the type of element isn't compatible with the type of range,
+ * and there is no effective way to check whether the [item] belongs to this range other then materializing all
+ * values of the range and comparing them with the specified [item] one by one.
+ * Thus, using this overload is strongly deprecated and will result in error on the call site.
+ */
+@Deprecated("This call to contains() would require all range values to be materialized. Use containsRaw instead if you ultimately want to do so, or check the type of item to be compatible with type of range.", level = DeprecationLevel.ERROR)
+public operator fun <E> ShortRange.contains(item: E): Boolean {
+    return containsRaw(item)
+}
+
+/**
  * Checks if the specified [item] belongs to this range.
  */
 @Deprecated("Range<T> is deprecated. Use ClosedRange<T> instead.")
