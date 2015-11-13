@@ -59,6 +59,19 @@ abstract class BaseKotlinVariableMacro : Macro() {
 
         val resolutionFacade = contextExpression.getResolutionFacade()
 
+/*
+        val bindingContext = resolutionFacade.analyze(contextExpression, BodyResolveMode.PARTIAL_FOR_COMPLETION)
+
+        val inDescriptor = contextExpression.getResolutionScope(bindingContext, resolutionFacade).ownerDescriptor
+
+        fun isVisible(descriptor: DeclarationDescriptor): Boolean {
+            return descriptor !is DeclarationDescriptorWithVisibility || descriptor.isVisible(inDescriptor, bindingContext)
+        }
+
+        ReferenceVariantsHelper(bindingContext, resolutionFacade, resolutionFacade.moduleDescriptor, isVisible)
+
+
+*/
         val bindingContext = resolutionFacade.analyze(contextExpression, BodyResolveMode.FULL)
         val scope = contextExpression.getResolutionScope(bindingContext, resolutionFacade)
 
