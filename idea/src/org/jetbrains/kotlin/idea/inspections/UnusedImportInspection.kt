@@ -63,8 +63,7 @@ class UnusedImportInspection : AbstractKotlinInspection() {
         val directives = file.importDirectives
         val explicitlyImportedFqNames = directives
                 .asSequence()
-                .map { it.importPath }
-                .filterNotNull()
+                .mapNotNull { it.importPath }
                 .filter { !it.isAllUnder && !it.hasAlias() }
                 .map { it.fqnPart() }
                 .toSet()

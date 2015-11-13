@@ -51,7 +51,7 @@ public object AndroidConst {
     val IGNORED_XML_WIDGET_TYPES = setOf("requestFocus", "merge", "tag", "check", "blink")
 
     val ESCAPED_IDENTIFIERS = (KtTokens.KEYWORDS.types + KtTokens.SOFT_KEYWORDS.types)
-            .map { it as? KtKeywordToken }.filterNotNull().map { it.value }.toSet()
+            .mapNotNull { (it as? KtKeywordToken)?.value }.toSet()
 
     val FQNAME_RESOLVE_PACKAGES = listOf("android.widget", "android.webkit", "android.view")
 }

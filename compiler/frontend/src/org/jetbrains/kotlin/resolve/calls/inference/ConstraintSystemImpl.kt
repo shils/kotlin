@@ -173,9 +173,9 @@ public class ConstraintSystemImpl : ConstraintSystem {
     }
 
     fun KotlinType.getNestedTypeVariables(original: Boolean = true): List<TypeParameterDescriptor> {
-        return getNestedArguments().map { typeProjection ->
+        return getNestedArguments().mapNotNull { typeProjection ->
             typeProjection.getType().getConstructor().getDeclarationDescriptor() as? TypeParameterDescriptor
-        }.filterNotNull().filter { if (original) it in originalToVariables.keySet() else it in getAllTypeVariables() }
+        }.filter { if (original) it in originalToVariables.keySet() else it in getAllTypeVariables() }
     }
 
     public fun copy(): ConstraintSystem = createNewConstraintSystemFromThis { true }
