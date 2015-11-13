@@ -18,6 +18,7 @@ package org.jetbrains.kotlin.android.synthetic.idea.res
 
 import com.intellij.openapi.module.ModuleServiceManager
 import com.intellij.openapi.project.Project
+import org.jetbrains.android.facet.AndroidFacet
 import org.jetbrains.kotlin.analyzer.ModuleInfo
 import org.jetbrains.kotlin.android.synthetic.res.AndroidLayoutXmlFileManager
 import org.jetbrains.kotlin.android.synthetic.res.AndroidPackageFragmentProviderExtension
@@ -27,6 +28,8 @@ class IDEAndroidPackageFragmentProviderExtension : AndroidPackageFragmentProvide
 
     override fun getLayoutXmlFileManager(project: Project, moduleInfo: ModuleInfo?): AndroidLayoutXmlFileManager? {
         val moduleSourceInfo = moduleInfo as? ModuleSourceInfo ?: return null
-        return ModuleServiceManager.getService(moduleSourceInfo.module, AndroidLayoutXmlFileManager::class.java)
+        val module = moduleSourceInfo.module
+        if (AndroidFacet.getInstance(module) == null) return null
+        return ModuleServiceManager.getService(module, AndroidLayoutXmlFileManager::class.java)
     }
 }
