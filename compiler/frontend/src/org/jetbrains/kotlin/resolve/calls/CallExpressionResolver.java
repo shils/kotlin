@@ -371,10 +371,6 @@ public class CallExpressionResolver {
                 selectorReturnTypeInfo = selectorReturnTypeInfo.replaceType(selectorReturnType);
             }
 
-            // TODO : this is suspicious: remove this code?
-            if (selectorExpression != null && selectorReturnType != null) {
-                currentContext.trace.recordType(selectorExpression, selectorReturnType);
-            }
             resultTypeInfo = selectorReturnTypeInfo;
             CompileTimeConstant<?> value = constantExpressionEvaluator.evaluateExpression(element.getQualified(), currentContext.trace, currentContext.expectedType);
             if (value != null && value.isPure()) {

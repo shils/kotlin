@@ -5,7 +5,7 @@ class Test {
     val a = <!TYPECHECKER_HAS_RUN_INTO_RECURSIVE_PROBLEM, UNINITIALIZED_VARIABLE!>y<!>;
   }
 
-  val z = y.<!DEBUG_INFO_ELEMENT_WITH_ERROR_TYPE!>a<!>;
+  val z = y.a;
 
 }
 
