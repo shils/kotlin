@@ -41,12 +41,21 @@ import org.jetbrains.kotlin.test.TestJdkKind;
 import org.jetbrains.kotlin.utils.KotlinPaths;
 import org.jetbrains.kotlin.utils.PathUtil;
 import org.junit.Assert;
+import org.junit.Before;
 import org.junit.Test;
 
 import java.util.Collections;
 import java.util.List;
 
 public class ScriptTest {
+
+    //@Before
+    //public void setUp() throws Exception {
+    //    // set to false if not present or set to true or unknown (empty considered true)
+    //    if (System.getProperty(KOTLIN_COMPILER_ENVIRONMENT_KEEPALIVE_PROPERTY)?.let { it.toBooleanLenient() ?: true } ?: true )
+    //    System.setProperty(KOTLIN_COMPILER_ENVIRONMENT_KEEPALIVE_PROPERTY, "false")
+    //}
+
     @Test
     public void testScript() throws Exception {
         Class<?> aClass = compileScript("fib.kts", numIntParam(), Collections.<KotlinScriptDefinition>emptyList());
